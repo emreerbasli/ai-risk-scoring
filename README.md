@@ -16,7 +16,7 @@
 
 ---
 
-![Dashboard Genel Görünüm](assets/dashboard_top.png)
+![Platform Genel Görünüm](assets/dashboard_overview.png)
 
 ---
 
@@ -26,9 +26,10 @@ Geleneksel B2B alacak yönetiminde borçlular yalnızca doğrusal gecikme günü
 
 Bu platform:
 1. **IFRS 9 / Basel II Kredi Aşamalandırması (Staging)** mantığını B2B faturaya uyarlar.
-2. Soyut puanların ötesine geçerek **Beklenen Finansal Zararı (Expected Loss in USD)** hesaplar.
-3. Çok boyutlu **6 Faktörlü Radar Grafiği** ile borçluyu portföy ortalamasıyla kıyaslar.
+2. Soyut puanların ötesine geçerek **Beklenen Finansal Zararı (Expected Loss in USD)** kuruşu kuruşuna hesaplar.
+3. Çok boyutlu **6 Faktörlü Radar Grafiği** ile borçluyu portföy benchmark ortalamasıyla kıyaslar.
 4. **Llama 3.3 70B** aracılığıyla tahsilat yöneticisine savunulabilir, finansal kanıtlara dayalı **Açıklanabilir AI (XAI)** kararları üretir.
+5. **Canlı Borçlu Simülatörü (What-If Calculator)** ile analistlerin serbest parametrelerle model çıktısını anlık test etmesini sağlar.
 
 ---
 
@@ -39,6 +40,7 @@ Bu platform:
 | **📈 IFRS 9 Kredi Staging** | Stage 1 (Sağlıklı 0-30g), Stage 2 (SICR 31-89g), Stage 3 (Temerrüt 90+g) |
 | **💰 Beklenen Zarar (EL)** | $EL = PD \times LGD \times EAD$ formülüyle risk altındaki net dolar tutarı |
 | **🕸️ 6 Boyutlu Risk Radarı** | Borçlunun risk poligonunu portföy benchmark'ı ile kıyaslayan Plotly Radar Chart |
+| **🧮 What-If Borçlu Simülatörü** | Özel borçlu parametreleriyle anlık risk, EL ve AI açıklaması hesaplayan canlı simülatör |
 | **🎛️ Stres Testi & Senaryolar** | Standart Model, Makroekonomik Kriz ve Likidite Odaklı dinamik ağırlık profilleri |
 | **🤖 Llama 3.3 70B XAI Motoru** | Groq API üzerinden finansal göstergeleri Türkçe/İngilizce stratejik özete çevirir |
 | **🔒 Edge Proxy Güvenliği** | Cloudflare Workers ile istemci tarafında sıfır API anahtarı ifşası |
@@ -106,13 +108,19 @@ Platform, makroekonomik koşullara göre 3 farklı stres profili sunar:
 
 ---
 
-## 🖥️ Arayüz ve Görsel Analitik
+## 🖥️ Ekran Görüntüleri
 
-**Portföy Tablosu & Finansal Metrikler:**
-![Borçlu Tablosu](assets/dashboard_table.png)
+### 1. Portföy Analitiği, Kritik Uyarılar & Sektörel Dağılım
+![Portföy Analitiği](assets/dashboard_analytics.png)
 
-**Bireysel Borçlu Analizi, Radar Grafiği & AI Karar Açıklaması:**
-![Detaylı Analiz & AI Açıklaması](assets/dashboard_details.png)
+### 2. IFRS 9 Portföy Tablosu & Finansal Metrikler
+![Portföy Tablosu](assets/dashboard_table.png)
+
+### 3. 6 Boyutlu Risk Radarı (Spider Chart) & Bireysel Analiz
+![Bireysel Borçlu Analizi](assets/dashboard_details.png)
+
+### 4. Canlı Borçlu Simülatörü (What-If Calculator) & Llama 3.3 70B Karar Açıklaması
+![Canlı Borçlu Simülatörü](assets/simulator_results.png)
 
 ---
 
@@ -137,15 +145,20 @@ cd ai-risk-scoring
 # 2. Bağımlılıkları yükle
 pip install -r requirements.txt
 
-# 3. Uygulamayı çalıştır
+# 3. Birim testleri çalıştır
+python -m unittest test_engine.py
+
+# 4. Uygulamayı başlat
 streamlit run app.py
 ```
+
+Uygulama varsayılan olarak `http://localhost:8501` adresinde açılır.
 
 ---
 
 <div align="center">
 
 **Geliştirici:** [Emre Erbaşlı](https://github.com/emreerbasli)  
-*IFRS 9 & Basel II Quantitative Credit Intelligence PoC*
+*IFRS 9 & Basel II Quantitative Credit Intelligence Platform*
 
 </div>
