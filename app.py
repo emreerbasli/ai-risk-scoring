@@ -1,58 +1,76 @@
 """
-Collections Intelligence - Streamlit Dashboard
-AI Risk Scoring — B2B Debtor Prioritization Platform
+Collections Intelligence - Advanced Streamlit Dashboard
+AI Risk Scoring — B2B Debtor Prioritization & Financial Risk Platform
 
 Çalıştırma: streamlit run app.py
-Demo modu: Cloudflare Worker çalışmıyorsa mock LLM açıklamaları döner.
 """
 
-# Demo modu için mock açıklamalar
+import io
+import os
+from datetime import datetime
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+
+# Modüller
+from data_generator import generate_mock_debtors
+from scoring_engine import score_portfolio, MODEL_PROFILES
+from llm_engine import get_single_explanation
+
+# ──────────────────────────────────────────────────────────────
+# DEMO MODU MOCK AÇIKLAMALARI (Zengin Finansal Bağlam)
+# ──────────────────────────────────────────────────────────────
 _MOCK_TR = {
     "🔴 Hemen Ara": [
-        "{days} günlük gecikme ve {amount} USD açık tutarıyla kritik risk eşiğini aşmış olan bu borçlu için, {sector} sektörünün yüksek volatilitesi göz önünde bulundurulduğunda derhal telefon görüşmesi başlatılması önerilir.",
-        "Ödeme geçmişi skoru düşük olan ve son {contact} gündür hiç iletişim kurulmamış bu borçlu için kritik risk seviyesi nedeniyle acil tahsilat görüşmesi kritik önem taşımaktadır.",
+        "Borçlu IFRS 9 {stage} aşamasında olup, %{pd} temerrüt olasılığı ve {sector} sektöründeki %{lgd} LGD oranı nedeniyle ${el} USD beklenen finansal zarar riski taşımaktadır; derhal acil tahsilat ve telefon araması önerilir.",
+        "Son {contact} gündür temasa geçilmeyen ve {days} günlük gecikmesi bulunan borçlunun kredi notu ve olumsuz trendi doğrultusunda beklenen zarar ${el} USD'ye ulaşmıştır; derhal üst düzey tahsilat görüşmesi başlatılmalıdır.",
     ],
     "🟠 E-posta At": [
-        "Borçlunun {days} günlük gecikmesi ve kötüleşen ödeme trendi, yazılı iletişim yoluyla ödeme planı talep edilmesini gerektirmektedir; {sector} sektörü riski bu kararı desteklemektedir.",
-        "Yüksek risk skoruna rağmen ödeme geçmişi orta düzeyde olan bu borçlu için, resmi bir e-posta ile ödeme hatırlatması ve şartların netleştirilmesi tavsiye edilir.",
+        "Borçlu IFRS 9 {stage} (SICR) kapsamında olup, %{pd} temerrüt ihtimali ve kötüleşen ödeme trendi doğrultusunda resmi bir yazılı ihtarname ve ödeme planı yapılandırması gönderilmesi tavsiye edilir.",
+        "Yüksek risk skoru ve ${el} USD beklenen finansal kayıp karşısında, borçlunun geçmiş performansı gözetilerek şartların netleştirildiği resmi bir e-posta hatırlatması stratejik olarak uygundur.",
     ],
     "🟡 Takipte Tut": [
-        "Borçlunun ödeme geçmişi nispeten olumlu olup mevcut {days} günlük gecikme henüz kritik seviyeye ulaşmamıştır; sistematik takip yeterli olacaktır.",
-        "Orta risk seviyesindeki bu borçlu için periyodik izleme yeterlidir; herhangi bir olumsuz trend tespitinde aksiyon kademesi yükseltilmelidir.",
+        "Borçlu IFRS 9 {stage} sınırında yer almakta olup, mevcut {days} günlük gecikme ve %{pd} temerrüt olasılığı henüz doğrudan icrai müdahale gerektirmemekte, periyodik risk izlemesi yeterli görülmektedir.",
+        "Orta risk seviyesindeki borçlunun beklenen zararı (${el} USD) kontrol edilebilir düzeydedir; haftalık periyotlarla ödeme akışı takip edilmelidir.",
     ],
     "🟢 Bekle": [
-        "Bu borçlunun güçlü ödeme geçmişi ve düşük gecikme süresi göz önünde bulundurulduğunda, müdahale gerektiren bir risk faktörü bulunmamaktadır.",
-        "Düşük risk profiline sahip olan bu borçlu için bekleme stratejisi uygundur; mevcut ödeme davranışı devam ettiği sürece aksiyon alınmasına gerek yoktur.",
+        "Borçlu IFRS 9 {stage} (Sağlıklı) kategorisinde yer almaktadır; %{pd} gibi düşük temerrüt olasılığı ve güçlü ödeme geçmişi nedeniyle müdahaleye gerek yoktur.",
+        "Finansal riski son derece düşük olan borçlu için bekleme stratejisi geçerlidir; rutin faturalama döngüsü izlenmektedir.",
     ],
 }
 
 _MOCK_EN = {
     "🔴 Hemen Ara": [
-        "With {days} days overdue and an outstanding balance of {amount} USD, this debtor has exceeded the critical risk threshold; immediate phone contact is strongly recommended given the high volatility in the {sector} sector.",
-        "This debtor's low payment history score combined with {contact} days of no contact places them firmly in the critical action category requiring immediate collection outreach.",
+        "The debtor is in IFRS 9 {stage} with a {pd}% Probability of Default and {sector} sector LGD of {lgd}%, resulting in an Expected Loss of ${el} USD; immediate executive collection calls are required.",
+        "With {days} days overdue, negative payment momentum, and ${el} USD at risk, immediate high-priority intervention is needed before default saturation occurs.",
     ],
     "🟠 E-posta At": [
-        "The debtor's {days}-day overdue status and deteriorating payment trend warrant a formal written communication requesting a payment plan, particularly given the {sector} sector risk premium.",
-        "Despite an elevated risk score, the debtor's moderate payment history suggests a structured email reminder with clear payment terms would be the appropriate next step.",
+        "Classified under IFRS 9 {stage} (SICR), the debtor exhibits an elevated default probability of {pd}%; structured formal email communication with revised payment milestones is advised.",
+        "Given the deteriorating trend and ${el} USD expected exposure, a formal reminder letter should be dispatched to protect portfolio liquidity.",
     ],
     "🟡 Takipte Tut": [
-        "The debtor's relatively positive payment history and manageable {days}-day overdue period do not yet warrant escalation; systematic monitoring is the appropriate response.",
-        "At this moderate risk level, periodic monitoring is sufficient; the action tier should be elevated if any negative trend is detected.",
+        "Debtor remains within IFRS 9 {stage} boundaries; the {days}-day overdue duration and {pd}% default risk warrant systematic monitoring rather than aggressive escalation.",
+        "Expected loss of ${el} USD is within manageable parameters; maintain close observation for any secondary rating migration.",
     ],
     "🟢 Bekle": [
-        "This debtor's strong payment history and minimal overdue period present no actionable risk factors at this time.",
-        "The low-risk profile of this debtor makes a wait strategy appropriate; no intervention is needed as long as current payment behavior continues.",
+        "Debtor is firmly in IFRS 9 {stage} (Performing); strong historical discipline and minimal default likelihood ({pd}%) require no operational intervention.",
+        "Low-risk portfolio asset with sound payment history; continue standard billing schedule without active collection follow-up.",
     ],
 }
 
 
 def get_mock_explanation(debtor_row, lang_code: str = "tr") -> str:
-    """API çağrısı yapmadan borçluya özgü mock açıklama döndür."""
+    """Borçluya özgü dinamik mock açıklama oluştur"""
     pool = _MOCK_TR if lang_code == "tr" else _MOCK_EN
     action = debtor_row["action"]
     templates = pool.get(action, pool["🟢 Bekle"])
     template = templates[hash(str(debtor_row["debtor_id"])) % len(templates)]
     return template.format(
+        stage=debtor_row.get("ifrs9_stage_label", "Stage 2"),
+        pd=debtor_row.get("pd_pct", 50.0),
+        lgd=debtor_row.get("lgd_pct", 40.0),
+        el=f"{debtor_row.get('expected_loss', 0):,.0f}",
         days=debtor_row.get("days_overdue", "?"),
         amount=f"{debtor_row.get('outstanding_amount', 0):,.0f}",
         sector=debtor_row.get("sector", ""),
@@ -60,31 +78,16 @@ def get_mock_explanation(debtor_row, lang_code: str = "tr") -> str:
     )
 
 
-import streamlit as st
-import io
-import os
-from datetime import datetime
-import plotly.express as px
-import plotly.graph_objects as go
-
-# Modüller
-from data_generator import generate_mock_debtors
-from scoring_engine import score_portfolio
-from llm_engine import get_single_explanation
-
 # ──────────────────────────────────────────────────────────────
-# SAYFA AYARLARI
+# SAYFA AYARLARI & CSS
 # ──────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Zolvo Collection AI | Zolvo PoC",
+    page_title="AI Risk Scoring | B2B Collections Intelligence",
     page_icon="🏦",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ──────────────────────────────────────────────────────────────
-# CSS STİLLERİ
-# ──────────────────────────────────────────────────────────────
 st.markdown(
     """
 <style>
@@ -101,7 +104,7 @@ st.markdown(
 
     /* Metrik kartları */
     [data-testid="stMetric"] {
-        background: rgba(15, 25, 50, 0.8);
+        background: rgba(15, 25, 50, 0.85);
         border: 1px solid rgba(99, 179, 237, 0.2);
         border-radius: 12px;
         padding: 16px;
@@ -110,16 +113,16 @@ st.markdown(
 
     [data-testid="stMetric"] label {
         color: #90cdf4 !important;
-        font-size: 0.8rem !important;
-        font-weight: 600 !important;
+        font-size: 0.78rem !important;
+        font-weight: 700 !important;
         text-transform: uppercase;
         letter-spacing: 1px;
     }
 
     [data-testid="stMetricValue"] {
         color: #e2e8f0 !important;
-        font-size: 1.8rem !important;
-        font-weight: 700 !important;
+        font-size: 1.7rem !important;
+        font-weight: 800 !important;
     }
 
     /* Header */
@@ -127,14 +130,14 @@ st.markdown(
         background: linear-gradient(135deg, rgba(10,20,45,0.95), rgba(15,30,60,0.95));
         border: 1px solid rgba(99, 179, 237, 0.25);
         border-radius: 16px;
-        padding: 28px 36px;
-        margin-bottom: 24px;
+        padding: 24px 32px;
+        margin-bottom: 20px;
         backdrop-filter: blur(20px);
     }
 
     .main-header h1 {
         color: #e2e8f0;
-        font-size: 2rem;
+        font-size: 1.9rem;
         font-weight: 800;
         margin: 0;
         letter-spacing: -0.5px;
@@ -142,7 +145,7 @@ st.markdown(
 
     .main-header p {
         color: #718096;
-        font-size: 0.9rem;
+        font-size: 0.88rem;
         margin: 6px 0 0 0;
     }
 
@@ -159,143 +162,48 @@ st.markdown(
         margin-bottom: 8px;
     }
 
-    /* Risk renk etiketleri */
-    .risk-critical {
-        background: linear-gradient(135deg, #c53030, #9b2c2c);
-        color: white;
+    /* Risk & Stage etiketleri */
+    .stage-badge {
         padding: 4px 12px;
         border-radius: 20px;
         font-weight: 700;
-        font-size: 0.78rem;
-        display: inline-block;
-    }
-    .risk-high {
-        background: linear-gradient(135deg, #c05621, #9c4221);
-        color: white;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-weight: 700;
-        font-size: 0.78rem;
-        display: inline-block;
-    }
-    .risk-medium {
-        background: linear-gradient(135deg, #b7791f, #975a16);
-        color: white;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-weight: 700;
-        font-size: 0.78rem;
-        display: inline-block;
-    }
-    .risk-low {
-        background: linear-gradient(135deg, #276749, #22543d);
-        color: white;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-weight: 700;
-        font-size: 0.78rem;
+        font-size: 0.75rem;
         display: inline-block;
     }
 
-    /* Borçlu detay kartı */
     .debtor-card {
         background: rgba(15, 25, 50, 0.9);
         border: 1px solid rgba(99, 179, 237, 0.2);
         border-radius: 12px;
-        padding: 20px;
+        padding: 18px;
         margin: 8px 0;
         backdrop-filter: blur(10px);
     }
 
-    /* Açıklama kutusu */
     .explanation-box {
-        background: linear-gradient(135deg, rgba(49, 130, 206, 0.1), rgba(43, 108, 176, 0.05));
+        background: linear-gradient(135deg, rgba(49, 130, 206, 0.12), rgba(43, 108, 176, 0.06));
         border-left: 3px solid #3182ce;
         border-radius: 0 8px 8px 0;
-        padding: 14px 18px;
+        padding: 16px 20px;
         margin: 10px 0;
         font-size: 0.92rem;
         color: #cbd5e0;
         line-height: 1.6;
     }
 
-    /* Bilgi kutusu */
-    .info-box {
-        background: rgba(49, 130, 206, 0.08);
-        border: 1px solid rgba(99, 179, 237, 0.2);
-        border-radius: 10px;
-        padding: 14px 18px;
-        margin: 8px 0;
-        font-size: 0.85rem;
-        color: #90cdf4;
-    }
-
-    /* Dataframe stili */
-    .stDataFrame {
-        border-radius: 12px;
-        overflow: hidden;
-    }
-
-    /* Butonlar */
-    .stButton > button {
-        background: linear-gradient(135deg, #3182ce, #2b6cb0);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        font-weight: 600;
-        padding: 8px 20px;
-        transition: all 0.2s;
-    }
-
-    .stButton > button:hover {
-        background: linear-gradient(135deg, #4299e1, #3182ce);
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(49, 130, 206, 0.4);
-    }
-
-    /* Skor çubuk */
-    .score-bar-container {
-        background: rgba(255,255,255,0.05);
-        border-radius: 10px;
-        height: 8px;
-        width: 100%;
-        margin: 4px 0;
-    }
-
-    /* Section başlıkları */
     .section-title {
         color: #90cdf4;
         font-size: 0.75rem;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 1.5px;
-        margin-bottom: 16px;
-        padding-bottom: 8px;
+        margin-bottom: 14px;
+        padding-bottom: 6px;
         border-bottom: 1px solid rgba(99, 179, 237, 0.15);
     }
 
-    /* Genel metin renkleri */
     h1, h2, h3 { color: #e2e8f0 !important; }
     p, li { color: #a0aec0; }
-
-    /* Selectbox */
-    .stSelectbox label { color: #90cdf4 !important; }
-
-    /* Multiselect */
-    .stMultiSelect label { color: #90cdf4 !important; }
-
-    /* Slider */
-    .stSlider label { color: #90cdf4 !important; }
-
-    /* Toggle */
-    .stToggle label { color: #90cdf4 !important; }
-
-    /* Progress */
-    .stProgress > div > div {
-        border-radius: 10px;
-    }
-
-    /* Divider */
     hr { border-color: rgba(99, 179, 237, 0.15) !important; }
 </style>
 """,
@@ -304,29 +212,27 @@ st.markdown(
 
 
 # ──────────────────────────────────────────────────────────────
-# VERİ YÜKLEME (Cache ile)
+# VERİ YÜKLEME & SKORLAMA
 # ──────────────────────────────────────────────────────────────
 @st.cache_data(ttl=300)
-def load_portfolio():
-    """Portföyü yükle ve skorla"""
-    df = generate_mock_debtors(50)
-    scored = score_portfolio(df)
-    return scored
+def load_raw_debtors():
+    """Ham portföy verisini yükle"""
+    return generate_mock_debtors(50)
 
 
 # ──────────────────────────────────────────────────────────────
-# SIDEBAR
+# SIDEBAR: SENARYOLAR, FİLTRELER & AYARLAR
 # ──────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown(
         """
-    <div style='text-align: center; padding: 20px 0;'>
-        <div style='font-size: 2.5rem;'>🏦</div>
-        <div style='color: #e2e8f0; font-weight: 800; font-size: 1.1rem; margin-top: 8px;'>
-            Zolvo Collection AI
+    <div style='text-align: center; padding: 16px 0;'>
+        <div style='font-size: 2.3rem;'>🏦</div>
+        <div style='color: #e2e8f0; font-weight: 800; font-size: 1.1rem; margin-top: 6px;'>
+            AI Risk Scoring
         </div>
-        <div style='color: #4a6fa5; font-size: 0.75rem; margin-top: 4px; letter-spacing: 1px;'>
-            ZOLVO POC
+        <div style='color: #4a6fa5; font-size: 0.72rem; margin-top: 2px; letter-spacing: 1.2px;'>
+            IFRS 9 & BASEL II ENGINE
         </div>
     </div>
     <hr>
@@ -334,58 +240,65 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    st.markdown('<div class="section-title">🔍 Filtreler</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🎛️ Risk Modeli Profili</div>', unsafe_allow_html=True)
+    scenario_options = {
+        "balanced": "⚖️ Standart / Dengeli Model",
+        "stress": "🚨 Makroekonomik Kriz & Stres Testi",
+        "liquidity": "💰 Nakit Akışı & Likidite Odaklı",
+    }
+    selected_scenario_key = st.selectbox(
+        "Model Senaryosu",
+        options=list(scenario_options.keys()),
+        format_func=lambda k: scenario_options[k],
+        help="Model ağırlıklarını ve stres testi parametrelerini dinamik olarak günceller.",
+    )
+    current_profile = MODEL_PROFILES[selected_scenario_key]
+    st.caption(f"ℹ️ *{current_profile['description']}*")
+
+    st.markdown("<hr>", unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🔍 Portföy Filtreleri</div>', unsafe_allow_html=True)
+
+    # IFRS 9 Stage filtresi
+    stage_options = ["Tümü", "Stage 1 (Sağlıklı)", "Stage 2 (SICR)", "Stage 3 (Temerrüt)"]
+    selected_stage = st.selectbox("IFRS 9 Kredi Aşaması", stage_options)
 
     # Aksiyon filtresi
-    action_options = [
-        "Tümü",
-        "🔴 Hemen Ara",
-        "🟠 E-posta At",
-        "🟡 Takipte Tut",
-        "🟢 Bekle",
-    ]
+    action_options = ["Tümü", "🔴 Hemen Ara", "🟠 E-posta At", "🟡 Takipte Tut", "🟢 Bekle"]
     selected_action = st.selectbox("Aksiyon Tipi", action_options)
 
-    # Risk skor aralığı
+    # Risk skoru aralığı
     score_range = st.slider("Risk Skoru Aralığı", 0, 100, (0, 100), step=5)
 
     # Min. açık tutar
-    min_amount = st.number_input(
-        "Min. Açık Tutar (USD)", min_value=0, value=0, step=1000
-    )
-
-    # Max. gecikme günü
-    max_overdue = st.slider("Maks. Gecikme Günü", 0, 120, 120, step=5)
+    min_amount = st.number_input("Min. Açık Tutar (USD)", min_value=0, value=0, step=5000)
 
     st.markdown("<hr>", unsafe_allow_html=True)
-    st.markdown('<div class="section-title">⚙️ Ayarlar</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">⚙️ Sistem Ayarları</div>', unsafe_allow_html=True)
 
-    # Dil seçimi
     lang = st.selectbox("LLM Açıklama Dili", ["Türkçe", "English"])
     lang_code = "tr" if lang == "Türkçe" else "en"
 
-    st.markdown("<hr>", unsafe_allow_html=True)
-
-    if st.button("🔄 Portföyü Yenile"):
+    if st.button("🔄 Portföyü Yeniden Üret"):
         st.cache_data.clear()
         st.rerun()
 
+    # Risk Formülü Özeti
+    weights = current_profile["weights"]
     st.markdown(
-        """
-    <div style='margin-top: 20px; padding: 12px; background: rgba(49,130,206,0.08);
+        f"""
+    <div style='margin-top: 14px; padding: 12px; background: rgba(49,130,206,0.08);
          border-radius: 8px; border: 1px solid rgba(99,179,237,0.15);'>
-        <div style='color: #4a6fa5; font-size: 0.7rem; font-weight: 700;
-             text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;'>
-            Risk Formülü
+        <div style='color: #4a6fa5; font-size: 0.68rem; font-weight: 700;
+             text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;'>
+            Aktif Model Ağırlıkları
         </div>
-        <div style='color: #718096; font-size: 0.75rem; line-height: 1.8;'>
-            📅 Gecikme Günü: <b style='color:#90cdf4'>%30</b><br>
-            💰 Açık Tutar: <b style='color:#90cdf4'>%20</b><br>
-            📊 Ödeme Geçmişi: <b style='color:#90cdf4'>%15</b><br>
-            🏢 Sektör Riski: <b style='color:#90cdf4'>%15</b><br>
-            💳 Kredi Notu: <b style='color:#90cdf4'>%10</b><br>
-            📞 Son İletişim: <b style='color:#90cdf4'>%10</b><br>
-            📈 Trend: <b style='color:#90cdf4'>±bonus</b>
+        <div style='color: #718096; font-size: 0.72rem; line-height: 1.7;'>
+            📅 Non-Linear Gecikme: <b style='color:#90cdf4'>%{weights['overdue']*100:.0f}</b><br>
+            💰 Açık Tutar (Log): <b style='color:#90cdf4'>%{weights['amount']*100:.0f}</b><br>
+            🏢 Sektör Riski (LGD): <b style='color:#90cdf4'>%{weights['sector']*100:.0f}</b><br>
+            💳 Kredi Notu (PD): <b style='color:#90cdf4'>%{weights['credit']*100:.0f}</b><br>
+            📊 Ödeme Geçmişi: <b style='color:#90cdf4'>%{weights['history']*100:.0f}</b><br>
+            📞 İletişim Aralığı: <b style='color:#90cdf4'>%{weights['contact']*100:.0f}</b>
         </div>
     </div>
     """,
@@ -397,21 +310,18 @@ with st.sidebar:
         """
     <div style='padding: 12px; background: rgba(26,54,93,0.35);
          border-radius: 8px; border: 1px solid rgba(99,179,237,0.12);'>
-        <div style='color: #4a6fa5; font-size: 0.7rem; font-weight: 700;
-             text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;'>
-            📖 Bu Proje Hakkında
+        <div style='color: #4a6fa5; font-size: 0.68rem; font-weight: 700;
+             text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;'>
+            📖 Proje Hakkında
         </div>
-        <div style='color: #718096; font-size: 0.73rem; line-height: 1.8;'>
-            Kural tabanlı risk skoru + Llama 3.3 70B açıklaması
-            ile B2B tahsilat zekası PoC'u.<br><br>
-            <b style='color:#63b3ed'>Stack:</b> Python · Streamlit · Groq<br>
-            <b style='color:#63b3ed'>Güvenlik:</b> Cloudflare Workers<br>
-            <b style='color:#63b3ed'>Model:</b> Llama 3.3 70B
+        <div style='color: #718096; font-size: 0.72rem; line-height: 1.7;'>
+            IFRS 9 Staging · Expected Loss (EL)<br>
+            Llama 3.3 70B XAI · Cloudflare Edge<br>
+            Python · Streamlit · Plotly
         </div>
-        <div style='margin-top: 10px;'>
-            <a href='https://github.com/emreerbasli/ai-risk-scoring'
-               target='_blank'
-               style='color: #63b3ed; font-size: 0.73rem; text-decoration: none;'>
+        <div style='margin-top: 8px;'>
+            <a href='https://github.com/emreerbasli/ai-risk-scoring' target='_blank'
+               style='color: #63b3ed; font-size: 0.72rem; text-decoration: none;'>
                 🔗 GitHub Repo ↗
             </a>
         </div>
@@ -421,86 +331,95 @@ with st.sidebar:
     )
 
 
-
 # ──────────────────────────────────────────────────────────────
-# ANA İÇERİK
+# ANA PANEL: HEADER & VERİ HAZIRLAMA
 # ──────────────────────────────────────────────────────────────
-
-# Header
 st.markdown(
     """
 <div class="main-header">
-    <div class="zolvo-badge">Zolvo PoC · Haziran 2026</div>
-    <h1>🏦 Zolvo Collection AI Dashboard</h1>
-    <p>AI destekli borçlu önceliklendirme sistemi · Açıklanabilir kural tabanlı skorlama + Groq LLM açıklama motoru</p>
+    <div class="zolvo-badge">IFRS 9 & Basel II Uyumlu · Collections Intelligence</div>
+    <h1>🏦 AI Risk Scoring & Financial Loss Platform</h1>
+    <p>Non-linear risk modelleme · Beklenen Finansal Zarar (EL = PD × LGD × EAD) · Llama 3.3 70B Açıklanabilir AI (XAI)</p>
 </div>
 """,
     unsafe_allow_html=True,
 )
 
-# Veri yükle
-df = load_portfolio()
+raw_df = load_raw_debtors()
+df = score_portfolio(raw_df, profile_key=selected_scenario_key)
 
-# Filtre uygula
+# Filtreleme
 filtered_df = df.copy()
 
 if selected_action != "Tümü":
     filtered_df = filtered_df[filtered_df["action"] == selected_action]
 
+if selected_stage == "Stage 1 (Sağlıklı)":
+    filtered_df = filtered_df[filtered_df["ifrs9_stage"] == 1]
+elif selected_stage == "Stage 2 (SICR)":
+    filtered_df = filtered_df[filtered_df["ifrs9_stage"] == 2]
+elif selected_stage == "Stage 3 (Temerrüt)":
+    filtered_df = filtered_df[filtered_df["ifrs9_stage"] == 3]
+
 filtered_df = filtered_df[
     (filtered_df["risk_score"] >= score_range[0])
     & (filtered_df["risk_score"] <= score_range[1])
     & (filtered_df["outstanding_amount"] >= min_amount)
-    & (filtered_df["days_overdue"] <= max_overdue)
 ]
 
 
 # ──────────────────────────────────────────────────────────────
-# PORTFÖY ÖZETİ - METRİKLER
+# 1. PORTFÖY KPI METRİKLERİ (Finansal & Kredi Riski)
 # ──────────────────────────────────────────────────────────────
-st.markdown('<div class="section-title">📊 Portföy Özeti</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">📊 Portföy Finansal Risk Özeti</div>', unsafe_allow_html=True)
 
 col1, col2, col3, col4, col5 = st.columns(5)
 
 total_debtors = len(df)
-critical_count = len(df[df["risk_score"] >= 80])
-high_risk_count = len(df[(df["risk_score"] >= 60) & (df["risk_score"] < 80)])
 total_outstanding = df["outstanding_amount"].sum()
-avg_overdue = df["days_overdue"].mean()
+total_expected_loss = df["expected_loss"].sum()
+avg_pd = df["pd_pct"].mean()
+stage3_count = len(df[df["ifrs9_stage"] == 3])
 
 with col1:
     st.metric(
-        "Toplam Borçlu", f"{total_debtors}", help="Portföydeki toplam borçlu sayısı"
+        "Toplam Portföy",
+        f"${total_outstanding:,.0f}",
+        delta=f"{total_debtors} Borçlu",
+        help="Portföydeki toplam açık alacak tutarı.",
     )
 
 with col2:
     st.metric(
-        "🔴 Kritik (Hemen Ara)",
-        f"{critical_count}",
-        delta=f"%{critical_count/total_debtors*100:.0f} portföy",
+        "💰 Beklenen Zarar (EL)",
+        f"${total_expected_loss:,.0f}",
+        delta=f"%{total_expected_loss/total_outstanding*100:.1f} Portföy Riski",
         delta_color="inverse",
+        help="Expected Loss = PD x LGD x EAD toplamı. Temerrüt durumunda kaybedilmesi beklenen tutar.",
     )
 
 with col3:
     st.metric(
-        "🟠 Yüksek Risk",
-        f"{high_risk_count}",
-        delta=f"%{high_risk_count/total_debtors*100:.0f} portföy",
+        "🔴 Stage 3 (Temerrüt)",
+        f"{stage3_count}",
+        delta=f"%{stage3_count/total_debtors*100:.0f} Portföy",
         delta_color="inverse",
+        help="IFRS 9 uyarınca 90+ gün gecikmeli veya kritik riskli temerrüt aşamasındaki borçlular.",
     )
 
 with col4:
     st.metric(
-        "💰 Toplam Açık Tutar",
-        f"${total_outstanding:,.0f}",
-        help="Tüm portföydeki toplam açık fatura tutarı",
+        "📉 Ort. Temerrüt Olasılığı",
+        f"%{avg_pd:.1f}",
+        delta="Portföy PD Benchmark",
+        help="Tüm portföyün risk skorundan hesaplanan ortalama Probability of Default (PD) oranı.",
     )
 
 with col5:
     st.metric(
         "📅 Ort. Gecikme",
-        f"{avg_overdue:.0f} gün",
-        delta=f"Maks: {df['days_overdue'].max()} gün",
+        f"{df['days_overdue'].mean():.0f} gün",
+        delta=f"Maks: {df['days_overdue'].max():.0f} gün",
         delta_color="inverse",
     )
 
@@ -508,66 +427,7 @@ st.markdown("<hr>", unsafe_allow_html=True)
 
 
 # ──────────────────────────────────────────────────────────────
-# AKSİYON DAĞILIMI
-# ──────────────────────────────────────────────────────────────
-st.markdown(
-    '<div class="section-title">⚡ Bugünün Aksiyonları</div>', unsafe_allow_html=True
-)
-
-action_counts = df["action"].value_counts()
-col_a1, col_a2, col_a3, col_a4 = st.columns(4)
-
-action_data = [
-    ("🔴 Hemen Ara", "red", "#fc8181"),
-    ("🟠 E-posta At", "orange", "#f6ad55"),
-    ("🟡 Takipte Tut", "yellow", "#f6e05e"),
-    ("🟢 Bekle", "green", "#68d391"),
-]
-
-for col, (action, color, hex_color) in zip(
-    [col_a1, col_a2, col_a3, col_a4], action_data
-):
-    count = action_counts.get(action, 0)
-    pct = count / total_debtors * 100
-    with col:
-        st.markdown(
-            f"""
-        <div style='background: rgba(15,25,50,0.9); border: 1px solid rgba(99,179,237,0.15);
-             border-radius: 12px; padding: 16px; text-align: center;
-             border-top: 3px solid {hex_color};'>
-            <div style='font-size: 1.8rem; font-weight: 800; color: {hex_color};'>{count}</div>
-            <div style='color: #718096; font-size: 0.8rem; margin-top: 4px;'>{action}</div>
-            <div style='color: #4a6fa5; font-size: 0.72rem; margin-top: 4px;'>%{pct:.0f} portföy</div>
-        </div>
-        """,
-            unsafe_allow_html=True,
-        )
-
-st.markdown("<br>", unsafe_allow_html=True)
-st.markdown('<div class="section-title">🏢 Portföy Sektörel Dağılımı</div>', unsafe_allow_html=True)
-
-fig_sector = px.pie(
-    filtered_df, 
-    names="sector", 
-    values="outstanding_amount", 
-    hole=0.4,
-    color_discrete_sequence=px.colors.qualitative.Pastel
-)
-fig_sector.update_layout(
-    margin=dict(t=20, b=20, l=20, r=20),
-    paper_bgcolor="rgba(0,0,0,0)",
-    plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(color="#e2e8f0"),
-    showlegend=True,
-    height=300
-)
-st.plotly_chart(fig_sector, use_container_width=True)
-
-st.markdown("<br>", unsafe_allow_html=True)
-
-
-# ──────────────────────────────────────────────────────────────
-# 🚨 KRİTİK UYARILAR — En Yüksek Riskli 5 Borçlu
+# 2. KRİTİK UYARILAR (Top 5 Riskli Borçlu)
 # ──────────────────────────────────────────────────────────────
 st.markdown(
     '<div class="section-title">🚨 Kritik Uyarılar — En Yüksek Riskli 5 Borçlu</div>',
@@ -578,19 +438,9 @@ top5 = df.nlargest(5, "risk_score")
 cols_top5 = st.columns(5)
 
 for col_t5, (_, row_t5) in zip(cols_top5, top5.iterrows()):
-    risk_t5 = row_t5["risk_score"]
-    if risk_t5 >= 80:
-        border_c = "#fc8181"
-        bg_c = "rgba(197,48,48,0.12)"
-    elif risk_t5 >= 60:
-        border_c = "#f6ad55"
-        bg_c = "rgba(192,86,33,0.12)"
-    else:
-        border_c = "#f6e05e"
-        bg_c = "rgba(183,121,31,0.12)"
-
-    name_t5 = row_t5["debtor_name"]
-    name_short = name_t5[:16] + "…" if len(name_t5) > 16 else name_t5
+    border_c = row_t5["ifrs9_stage_color"]
+    bg_c = "rgba(197,48,48,0.12)" if row_t5["ifrs9_stage"] == 3 else "rgba(192,86,33,0.12)"
+    name_short = row_t5["debtor_name"][:16] + "…" if len(row_t5["debtor_name"]) > 16 else row_t5["debtor_name"]
 
     with col_t5:
         st.markdown(
@@ -598,23 +448,20 @@ for col_t5, (_, row_t5) in zip(cols_top5, top5.iterrows()):
         <div style='background: {bg_c}; border: 1px solid {border_c};
              border-top: 3px solid {border_c};
              border-radius: 10px; padding: 12px; text-align: center;'>
-            <div style='font-size: 0.7rem; color: #718096;
+            <div style='font-size: 0.68rem; color: #718096;
                  text-transform: uppercase; letter-spacing: 0.5px;
-                 margin-bottom: 4px; white-space: nowrap;
-                 overflow: hidden; text-overflow: ellipsis;'
-                 title='{name_t5}'>
+                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'
+                 title='{row_t5["debtor_name"]}'>
                 {name_short}
             </div>
-            <div style='font-size: 1.6rem; font-weight: 900; color: {border_c};'>
-                {risk_t5:.0f}
+            <div style='font-size: 1.55rem; font-weight: 900; color: {border_c}; margin: 2px 0;'>
+                {row_t5['risk_score']:.0f}
             </div>
-            <div style='font-size: 0.62rem; color: #4a6fa5;'>/ 100</div>
-            <div style='font-size: 0.67rem; color: #a0aec0; margin-top: 4px;'>
-                {row_t5['days_overdue']}g · ${row_t5['outstanding_amount']/1000:.0f}K
+            <div style='font-size: 0.62rem; color: #4a6fa5;'>EL: <b style='color:#fc8181'>${row_t5['expected_loss']/1000:.1f}K</b></div>
+            <div style='font-size: 0.65rem; color: #a0aec0; margin-top: 4px;'>
+                {row_t5['days_overdue']}g · PD %{row_t5['pd_pct']:.0f}
             </div>
-            <div style='font-size: 0.62rem; color: #718096; margin-top: 2px;'>
-                {row_t5['sector']}
-            </div>
+            <div style='font-size: 0.62rem; color: #718096;'>{row_t5['sector']}</div>
         </div>
         """,
             unsafe_allow_html=True,
@@ -624,131 +471,94 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 
 # ──────────────────────────────────────────────────────────────
-# RİSK SKORU DAĞILIM HİSTOGRAMI
+# 3. ANALİTİK GRAFİKLER (IFRS 9 Dağılımı & Risk Dağılımı)
 # ──────────────────────────────────────────────────────────────
-st.markdown(
-    '<div class="section-title">📊 Risk Skoru Dağılımı</div>',
-    unsafe_allow_html=True,
-)
+col_g1, col_g2 = st.columns([1, 1])
 
-fig_hist = go.Figure()
-fig_hist.add_trace(go.Histogram(
-    x=df["risk_score"],
-    nbinsx=20,
-    marker=dict(
-        color=df["risk_score"],
-        colorscale=[
-            [0.0, "#276749"],
-            [0.4, "#b7791f"],
-            [0.6, "#c05621"],
-            [1.0, "#c53030"],
-        ],
-        line=dict(color="rgba(255,255,255,0.05)", width=1),
-    ),
-    hovertemplate="Skor: %{x}<br>Borçlu Sayısı: %{y}<extra></extra>",
-))
-fig_hist.update_layout(
-    margin=dict(t=10, b=30, l=0, r=0),
-    paper_bgcolor="rgba(0,0,0,0)",
-    plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(color="#a0aec0"),
-    xaxis=dict(
-        title="Risk Skoru",
-        showgrid=True,
-        gridcolor="rgba(255,255,255,0.05)",
-        color="#718096",
-        range=[0, 100],
-    ),
-    yaxis=dict(
-        title="Borçlu Sayısı",
-        showgrid=True,
-        gridcolor="rgba(255,255,255,0.05)",
-        color="#718096",
-    ),
-    bargap=0.05,
-    height=220,
-    showlegend=False,
-)
-
-col_hist1, col_hist2 = st.columns([2, 1])
-with col_hist1:
-    st.plotly_chart(fig_hist, use_container_width=True)
-with col_hist2:
-    st.markdown(
-        f"""
-    <div style='padding: 16px; background: rgba(15,25,50,0.8);
-         border: 1px solid rgba(99,179,237,0.15); border-radius: 10px;
-         margin-top: 8px;'>
-        <div style='color: #4a6fa5; font-size: 0.7rem; font-weight: 700;
-             text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;'>
-            İstatistikler
-        </div>
-        <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 10px;'>
-            <div>
-                <div style='color: #718096; font-size: 0.68rem;'>Ortalama</div>
-                <div style='color: #e2e8f0; font-weight: 700;'>{df['risk_score'].mean():.1f}</div>
-            </div>
-            <div>
-                <div style='color: #718096; font-size: 0.68rem;'>Medyan</div>
-                <div style='color: #e2e8f0; font-weight: 700;'>{df['risk_score'].median():.1f}</div>
-            </div>
-            <div>
-                <div style='color: #718096; font-size: 0.68rem;'>Maks.</div>
-                <div style='color: #fc8181; font-weight: 700;'>{df['risk_score'].max():.1f}</div>
-            </div>
-            <div>
-                <div style='color: #718096; font-size: 0.68rem;'>Min.</div>
-                <div style='color: #68d391; font-weight: 700;'>{df['risk_score'].min():.1f}</div>
-            </div>
-        </div>
-    </div>
-    """,
-        unsafe_allow_html=True,
+with col_g1:
+    st.markdown('<div class="section-title">🏢 Sektörel Açık Tutar & LGD Dağılımı</div>', unsafe_allow_html=True)
+    fig_sector = px.pie(
+        filtered_df,
+        names="sector",
+        values="outstanding_amount",
+        hole=0.4,
+        color_discrete_sequence=px.colors.qualitative.Pastel,
     )
+    fig_sector.update_layout(
+        margin=dict(t=10, b=10, l=10, r=10),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#e2e8f0"),
+        height=260,
+    )
+    st.plotly_chart(fig_sector, use_container_width=True)
+
+with col_g2:
+    st.markdown('<div class="section-title">📊 Risk Skoru Dağılımı (Histogram)</div>', unsafe_allow_html=True)
+    fig_hist = go.Figure()
+    fig_hist.add_trace(
+        go.Histogram(
+            x=df["risk_score"],
+            nbinsx=18,
+            marker=dict(
+                color=df["risk_score"],
+                colorscale=[
+                    [0.0, "#276749"],
+                    [0.4, "#b7791f"],
+                    [0.6, "#c05621"],
+                    [1.0, "#c53030"],
+                ],
+                line=dict(color="rgba(255,255,255,0.05)", width=1),
+            ),
+            hovertemplate="Skor: %{x}<br>Borçlu Sayısı: %{y}<extra></extra>",
+        )
+    )
+    fig_hist.update_layout(
+        margin=dict(t=10, b=20, l=10, r=10),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#a0aec0", size=10),
+        xaxis=dict(title="Risk Skoru", showgrid=True, gridcolor="rgba(255,255,255,0.05)", color="#718096", range=[0, 100]),
+        yaxis=dict(title="Borçlu", showgrid=True, gridcolor="rgba(255,255,255,0.05)", color="#718096"),
+        bargap=0.06,
+        height=260,
+        showlegend=False,
+    )
+    st.plotly_chart(fig_hist, use_container_width=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
 
-
-
 # ──────────────────────────────────────────────────────────────
-# BORÇLU TABLOSU
+# 4. BORÇLU TABLOSU (IFRS 9 & Beklenen Zarar Dahil)
 # ──────────────────────────────────────────────────────────────
 st.markdown(
-    f'<div class="section-title">📋 Borçlu Tablosu ({len(filtered_df)} sonuç)</div>',
+    f'<div class="section-title">📋 Portföy Tablosu ({len(filtered_df)} borçlu listeleniyor)</div>',
     unsafe_allow_html=True,
 )
 
-# Görüntülenecek kolonlar
 display_cols = {
     "debtor_name": "Borçlu Adı",
     "sector": "Sektör",
-    "credit_rating": "Kredi Notu",
+    "ifrs9_stage_label": "IFRS 9 Aşaması",
     "risk_score": "Risk Skoru",
+    "pd_pct": "PD (%)",
+    "expected_loss": "Beklenen Zarar (EL $)",
+    "outstanding_amount": "Açık Tutar ($)",
     "action": "Aksiyon",
     "days_overdue": "Gecikme (gün)",
-    "outstanding_amount": "Açık Tutar ($)",
-    "payment_history_score": "Ödeme Geçmişi",
-    "days_since_contact": "Son İletişim (gün)",
+    "credit_rating": "Kredi Notu",
     "trend_label": "Trend",
-    "last_contact_date": "Son İletişim Tarihi",
 }
 
 display_df = filtered_df[list(display_cols.keys())].copy()
 display_df.columns = list(display_cols.values())
-display_df["Açık Tutar ($)"] = display_df["Açık Tutar ($)"].apply(
-    lambda x: f"${x:,.0f}"
-)
-display_df["Ödeme Geçmişi"] = display_df["Ödeme Geçmişi"].apply(
-    lambda x: f"{x:.0f}/100"
-)
+display_df["Beklenen Zarar (EL $)"] = display_df["Beklenen Zarar (EL $)"].apply(lambda x: f"${x:,.0f}")
+display_df["Açık Tutar ($)"] = display_df["Açık Tutar ($)"].apply(lambda x: f"${x:,.0f}")
+display_df["PD (%)"] = display_df["PD (%)"].apply(lambda x: f"%{x:.1f}")
 display_df["Risk Skoru"] = display_df["Risk Skoru"].apply(lambda x: f"{x:.1f}/100")
 
-st.dataframe(
-    display_df,
-    width="stretch",
-    height=420,
-)
+st.dataframe(display_df, width="stretch", height=380)
 
 # CSV Export
 csv_buffer = io.StringIO()
@@ -756,25 +566,27 @@ export_df = filtered_df[
     [
         "debtor_id",
         "debtor_name",
+        "sector",
+        "credit_rating",
+        "ifrs9_stage",
         "risk_score",
-        "action",
-        "action_en",
-        "days_overdue",
+        "pd_pct",
+        "lgd_pct",
+        "expected_loss",
         "outstanding_amount",
-        "payment_history_score",
-        "days_since_contact",
+        "days_overdue",
+        "action",
         "trend_label",
-        "last_contact_date",
     ]
 ].copy()
 export_df.to_csv(csv_buffer, index=False)
 
-col_exp1, col_exp2 = st.columns([1, 5])
+col_exp1, _ = st.columns([1, 5])
 with col_exp1:
     st.download_button(
-        label="📥 CSV İndir",
+        label="📥 CSV Portföy Raporu İndir",
         data=csv_buffer.getvalue().encode("utf-8-sig"),
-        file_name=f"collections_report_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+        file_name=f"collections_risk_report_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
         mime="text/csv",
     )
 
@@ -782,65 +594,51 @@ st.markdown("<hr>", unsafe_allow_html=True)
 
 
 # ──────────────────────────────────────────────────────────────
-# DETAYLI BORÇLU ANALİZİ
+# 5. DETAYLI BORÇLU ANALİZİ (RADAR CHART & XAI MOTORU)
 # ──────────────────────────────────────────────────────────────
-st.markdown(
-    '<div class="section-title">🔬 Detaylı Borçlu Analizi</div>', unsafe_allow_html=True
-)
+st.markdown('<div class="section-title">🔬 Bireysel Borçlu Analizi & XAI Karar Açıklaması</div>', unsafe_allow_html=True)
 
-# Borçlu seç — debtor_id ile seçim (isim örtüşmesi bug'unu önler)
-debtor_options = filtered_df["debtor_name"].tolist()
 debtor_ids = filtered_df["debtor_id"].tolist()
-if debtor_options:
+
+if debtor_ids:
     selected_debtor = st.selectbox(
-        "Borçlu Seç",
+        "Analiz Edilecek Borçluyu Seçin",
         options=debtor_ids,
-        format_func=lambda did: filtered_df.loc[
-            filtered_df["debtor_id"] == did, "debtor_name"
-        ].values[0],
+        format_func=lambda did: filtered_df.loc[filtered_df["debtor_id"] == did, "debtor_name"].values[0],
     )
     debtor_row = filtered_df[filtered_df["debtor_id"] == selected_debtor].iloc[0]
 
-    col_d1, col_d2 = st.columns([1.2, 1])
+    col_d1, col_d2 = st.columns([1.1, 1.2])
 
     with col_d1:
-        # Risk skoru görsel
+        # Borçlu Kartı
         risk = debtor_row["risk_score"]
-
-        if risk >= 80:
-            risk_class = "risk-critical"
-            risk_bg = "rgba(197,48,48,0.1)"
-            risk_border = "#c53030"
-        elif risk >= 60:
-            risk_class = "risk-high"
-            risk_bg = "rgba(192,86,33,0.1)"
-            risk_border = "#c05621"
-        elif risk >= 40:
-            risk_class = "risk-medium"
-            risk_bg = "rgba(183,121,31,0.1)"
-            risk_border = "#b7791f"
-        else:
-            risk_class = "risk-low"
-            risk_bg = "rgba(39,103,73,0.1)"
-            risk_border = "#276749"
+        stage_color = debtor_row["ifrs9_stage_color"]
+        bg_card = "rgba(197,48,48,0.1)" if risk >= 80 else ("rgba(192,86,33,0.1)" if risk >= 60 else "rgba(39,103,73,0.1)")
 
         st.markdown(
             f"""
-        <div style='background: {risk_bg}; border: 1px solid {risk_border};
-             border-radius: 12px; padding: 20px; margin-bottom: 16px;'>
-            <div style='font-size: 1.1rem; font-weight: 700; color: #e2e8f0; margin-bottom: 12px;'>
-                {debtor_row['debtor_name']}
+        <div style='background: {bg_card}; border: 1px solid {stage_color};
+             border-radius: 12px; padding: 18px; margin-bottom: 14px;'>
+            <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;'>
+                <span style='font-size: 1.15rem; font-weight: 800; color: #e2e8f0;'>
+                    {debtor_row['debtor_name']}
+                </span>
+                <span style='background: rgba(0,0,0,0.3); border: 1px solid {stage_color}; color: {stage_color};
+                             font-size: 0.72rem; font-weight: 700; padding: 3px 10px; border-radius: 12px;'>
+                    {debtor_row['ifrs9_stage_label']}
+                </span>
             </div>
-            <div style='display: flex; align-items: center; gap: 16px;'>
+            <div style='display: flex; align-items: center; gap: 20px;'>
                 <div>
-                    <div style='color: #718096; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px;'>Risk Skoru</div>
-                    <div style='font-size: 2.5rem; font-weight: 900; color: {risk_border};'>{risk:.0f}</div>
-                    <div style='color: #718096; font-size: 0.72rem;'>/100</div>
+                    <div style='color: #718096; font-size: 0.68rem; text-transform: uppercase;'>Risk Skoru</div>
+                    <div style='font-size: 2.3rem; font-weight: 900; color: {stage_color};'>{risk:.0f}</div>
+                    <div style='color: #718096; font-size: 0.68rem;'>/ 100</div>
                 </div>
-                <div style='flex: 1;'>
-                    <div style='color: #718096; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;'>Önerilen Aksiyon</div>
-                    <div class='{risk_class}'>{debtor_row['action']}</div>
-                    <div style='color: #4a6fa5; font-size: 0.72rem; margin-top: 6px;'>{debtor_row['trend_label']}</div>
+                <div style='flex: 1; border-left: 1px solid rgba(255,255,255,0.1); padding-left: 16px;'>
+                    <div style='color: #718096; font-size: 0.68rem; text-transform: uppercase;'>Önerilen Aksiyon</div>
+                    <div style='font-size: 1.05rem; font-weight: 800; color: #e2e8f0;'>{debtor_row['action']}</div>
+                    <div style='color: #4a6fa5; font-size: 0.72rem; margin-top: 4px;'>{debtor_row['trend_label']}</div>
                 </div>
             </div>
         </div>
@@ -848,26 +646,26 @@ if debtor_options:
             unsafe_allow_html=True,
         )
 
-        # Detay grid
+        # Finansal Risk Grid'i
         st.markdown(
             f"""
         <div class="debtor-card">
             <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 12px;'>
                 <div>
-                    <div style='color: #4a6fa5; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px;'>Gecikme Günü</div>
-                    <div style='color: #e2e8f0; font-weight: 700; font-size: 1.2rem;'>{debtor_row['days_overdue']} gün</div>
+                    <div style='color: #4a6fa5; font-size: 0.68rem; text-transform: uppercase;'>Beklenen Zarar (EL)</div>
+                    <div style='color: #fc8181; font-weight: 800; font-size: 1.25rem;'>${debtor_row['expected_loss']:,.0f}</div>
                 </div>
                 <div>
-                    <div style='color: #4a6fa5; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px;'>Açık Tutar</div>
-                    <div style='color: #e2e8f0; font-weight: 700; font-size: 1.2rem;'>${debtor_row['outstanding_amount']:,.0f}</div>
+                    <div style='color: #4a6fa5; font-size: 0.68rem; text-transform: uppercase;'>Açık Tutar (EAD)</div>
+                    <div style='color: #e2e8f0; font-weight: 800; font-size: 1.25rem;'>${debtor_row['outstanding_amount']:,.0f}</div>
                 </div>
                 <div>
-                    <div style='color: #4a6fa5; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px;'>Ödeme Geçmişi</div>
-                    <div style='color: #e2e8f0; font-weight: 700; font-size: 1.2rem;'>{debtor_row['payment_history_score']:.0f}/100</div>
+                    <div style='color: #4a6fa5; font-size: 0.68rem; text-transform: uppercase;'>Temerrüt Olasılığı (PD)</div>
+                    <div style='color: #e2e8f0; font-weight: 700; font-size: 1.1rem;'>%{debtor_row['pd_pct']:.1f}</div>
                 </div>
                 <div>
-                    <div style='color: #4a6fa5; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px;'>Son İletişim</div>
-                    <div style='color: #e2e8f0; font-weight: 700; font-size: 1.2rem;'>{debtor_row['days_since_contact']} gün önce</div>
+                    <div style='color: #4a6fa5; font-size: 0.68rem; text-transform: uppercase;'>Temerrüt Kaybı (LGD)</div>
+                    <div style='color: #e2e8f0; font-weight: 700; font-size: 1.1rem;'>%{debtor_row['lgd_pct']:.0f} ({debtor_row['sector']})</div>
                 </div>
             </div>
         </div>
@@ -875,109 +673,131 @@ if debtor_options:
             unsafe_allow_html=True,
         )
 
-    with col_d2:
-        st.markdown("**📊 Skor Bileşenleri (Açıklanabilirlik)**")
-
-        components = [
-            ("📅 Gecikme Günü (%30)", debtor_row["score_overdue"], 30),
-            ("💰 Açık Tutar (%20)", debtor_row["score_amount"], 20),
-            ("📊 Ödeme Geçmişi (%15)", debtor_row["score_history"], 15),
-            ("🏢 Sektör Riski (%15)", debtor_row["score_sector"], 15),
-            ("💳 Kredi Notu (%10)", debtor_row["score_credit"], 10),
-            ("📞 Son İletişim (%10)", debtor_row["score_contact"], 10),
-        ]
-
-        for label, value, max_val in components:
-            pct = min(value / max_val, 1.0) if max_val > 0 else 0
-            st.markdown(
-                f"""
-            <div style='margin-bottom: 12px;'>
-                <div style='display: flex; justify-content: space-between; margin-bottom: 4px;'>
-                    <span style='color: #a0aec0; font-size: 0.8rem;'>{label}</span>
-                    <span style='color: #e2e8f0; font-weight: 700; font-size: 0.85rem;'>{value:.1f}</span>
-                </div>
-                <div style='background: rgba(255,255,255,0.05); border-radius: 10px; height: 6px;'>
-                    <div style='background: linear-gradient(90deg, #3182ce, #63b3ed);
-                         width: {pct*100:.0f}%; height: 100%; border-radius: 10px;'></div>
-                </div>
-            </div>
-            """,
-                unsafe_allow_html=True,
-            )
-        # Sparkline (Historical Delays)
+        # Sparkline (Geçmiş Gecikmeler)
         delays = debtor_row.get("historical_delays", [])
         if delays:
-            st.markdown("<br>", unsafe_allow_html=True)
             fig_spark = px.line(
-                y=delays, 
-                title="Geçmiş 6 Fatura Gecikme Trendi (Gün)",
-                markers=True
+                y=delays,
+                title="📈 Geçmiş 6 Fatura Gecikme Seyri (Gün)",
+                markers=True,
             )
             fig_spark.update_layout(
                 margin=dict(t=30, b=10, l=0, r=0),
                 paper_bgcolor="rgba(0,0,0,0)",
                 plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#a0aec0", size=11),
+                font=dict(color="#a0aec0", size=10),
                 xaxis=dict(title=None, showgrid=False, zeroline=False, showticklabels=False),
-                yaxis=dict(title=None, showgrid=True, gridcolor="rgba(255,255,255,0.1)"),
-                height=150
+                yaxis=dict(title=None, showgrid=True, gridcolor="rgba(255,255,255,0.08)"),
+                height=130,
             )
-            fig_spark.update_traces(line_color="#63b3ed", marker=dict(size=6, color="#90cdf4"))
+            fig_spark.update_traces(line_color="#63b3ed", marker=dict(size=5, color="#90cdf4"))
             st.plotly_chart(fig_spark, use_container_width=True)
 
-        # Trend kutusunu her zaman göster (0 ise stabil)
-        trend_color = (
-            "#fc8181"
-            if debtor_row["score_trend"] > 0
-            else ("#68d391" if debtor_row["score_trend"] < 0 else "#90cdf4")
+    with col_d2:
+        # RADAR CHART (Spider Chart)
+        categories = ["Gecikme Süresi", "Açık Tutar", "Sektör Riski", "Kredi Notu Riski", "Ödeme Geçmişi Riski", "İletişim Aralığı"]
+        
+        debtor_values = [
+            debtor_row["norm_overdue"],
+            debtor_row["norm_amount"],
+            debtor_row["norm_sector"],
+            debtor_row["norm_credit"],
+            debtor_row["norm_history"],
+            debtor_row["norm_contact"],
+        ]
+        
+        benchmark_values = [
+            df["norm_overdue"].mean(),
+            df["norm_amount"].mean(),
+            df["norm_sector"].mean(),
+            df["norm_credit"].mean(),
+            df["norm_history"].mean(),
+            df["norm_contact"].mean(),
+        ]
+
+        fig_radar = go.Figure()
+        
+        # Portföy Benchmark'ı (Kesikli)
+        fig_radar.add_trace(go.Scatterpolar(
+            r=benchmark_values + [benchmark_values[0]],
+            theta=categories + [categories[0]],
+            fill=None,
+            name="Portföy Ortalaması",
+            line=dict(color="#718096", dash="dash", width=1.5),
+        ))
+        
+        # Seçilen Borçlu
+        fig_radar.add_trace(go.Scatterpolar(
+            r=debtor_values + [debtor_values[0]],
+            theta=categories + [categories[0]],
+            fill="toself",
+            name=debtor_row["debtor_name"],
+            line=dict(color="#63b3ed", width=2),
+            fillcolor="rgba(99, 179, 237, 0.25)",
+        ))
+
+        fig_radar.update_layout(
+            polar=dict(
+                radialaxis=dict(visible=True, range=[0, 100], showticklabels=False, gridcolor="rgba(255,255,255,0.08)"),
+                angularaxis=dict(color="#a0aec0", gridcolor="rgba(255,255,255,0.08)"),
+                bgcolor="rgba(0,0,0,0)",
+            ),
+            margin=dict(t=25, b=20, l=40, r=40),
+            paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#e2e8f0", size=10),
+            height=260,
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
         )
-        trend_sign = "+" if debtor_row["score_trend"] > 0 else ""
+        
+        st.markdown("**🕸️ 6 Boyutlu Risk Radarı (Borçlu vs. Portföy Ortalaması)**")
+        st.plotly_chart(fig_radar, use_container_width=True)
+
+        # Trend & Ceza Bilgisi
         st.markdown(
             f"""
         <div style='background: rgba(15,25,50,0.8); border: 1px solid rgba(99,179,237,0.15);
-             border-radius: 8px; padding: 10px 14px; margin-top: 8px;'>
-            <span style='color: #718096; font-size: 0.8rem;'>📈 Trend Bonusu: </span>
-            <span style='color: {trend_color}; font-weight: 700;'>
-                {trend_sign}{debtor_row['score_trend']:.0f} puan
+             border-radius: 8px; padding: 10px 14px; margin-top: 4px; display: flex; justify-content: space-between;'>
+            <span style='color: #718096; font-size: 0.78rem;'>
+                📈 Trend Bonusu: <b style='color:#90cdf4'>{debtor_row['score_trend']:+.0f} puan</b>
             </span>
-            <span style='color: #4a6fa5; font-size: 0.75rem;'> · {debtor_row['trend_label']}</span>
+            <span style='color: #718096; font-size: 0.78rem;'>
+                ⚠️ Bileşik Risk Cezası: <b style='color:#fc8181'>+{debtor_row['score_compound']:.0f} puan</b>
+            </span>
         </div>
         """,
             unsafe_allow_html=True,
         )
 
-    # LLM Açıklama
+    # ──────────────────────────────────────────────────────────
+    # LLM EXPLAINABLE AI BÖLÜMÜ
+    # ──────────────────────────────────────────────────────────
     st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown(
-        "**🤖 AI Karar Açıklaması** *(Groq · Llama 3.3 70B · Karar vermez, açıklar)*"
-    )
+    st.markdown("**🤖 AI Karar Açıklaması** *(Llama 3.3 70B · IFRS 9 & Expected Loss Destekli XAI)*")
 
-    col_llm1, col_llm2, col_llm3 = st.columns([1.2, 1, 3])
+    col_llm1, col_llm2, _ = st.columns([1.2, 1, 3])
     with col_llm1:
         generate_btn = st.button("✨ Açıklama Üret (Gerçek API)", key="gen_explanation")
     with col_llm2:
-        demo_btn = st.button("🎭 Demo Açıklama", key="gen_demo",
-                             help="API key gerektirmez — örnek açıklama gösterir")
+        demo_btn = st.button("🎭 Demo Açıklama", key="gen_demo", help="API anahtarı olmadan dinamik mock açıklama üretir")
 
     if generate_btn:
-        with st.spinner(
-            f"Llama 3.3 70B ile {debtor_row['debtor_name']} için açıklama üretiliyor..."
-        ):
+        with st.spinner(f"Llama 3.3 70B ile {debtor_row['debtor_name']} için finansal karar gerekçesi analiz ediliyor..."):
             try:
                 explanation = get_single_explanation(debtor_row, lang_code)
                 api_source = f"⚡ Groq · Llama 3.3 70B · {lang}"
             except Exception:
                 explanation = get_mock_explanation(debtor_row, lang_code)
-                api_source = "🎭 Demo Modu (API erişilemiyor — örnek açıklama)"
+                api_source = "🎭 Demo Modu (Canlı API yedeklemesi)"
 
         st.markdown(
             f"""
         <div class="explanation-box">
-            🤖 <strong>{debtor_row['debtor_name']}</strong><br><br>
+            🤖 <strong>{debtor_row['debtor_name']}</strong> — <em>{debtor_row['ifrs9_stage_label']}</em><br><br>
             {explanation}
             <br><br>
             <span style='color: #4a6fa5; font-size: 0.72rem;'>
-                {api_source} · Bu açıklama karar değildir — nihai onay insan yöneticiye aittir.
+                {api_source} · Bu açıklama karar destek niteliğindedir; nihai onay tahsilat yöneticisine aittir.
             </span>
         </div>
         """,
@@ -989,22 +809,19 @@ if debtor_options:
         st.markdown(
             f"""
         <div class="explanation-box">
-            🤖 <strong>{debtor_row['debtor_name']}</strong><br><br>
+            🤖 <strong>{debtor_row['debtor_name']}</strong> — <em>{debtor_row['ifrs9_stage_label']}</em><br><br>
             {explanation}
             <br><br>
             <span style='color: #4a6fa5; font-size: 0.72rem;'>
-                🎭 Demo Modu · Gerçek Groq API çağrısı yapılmamıştır.
-                Bu açıklama karar değildir — nihai onay insan yöneticiye aittir.
+                🎭 Demo Modu · Örnek XAI Çıktısı (API anahtarı gerektirmez). Nihai onay tahsilat yöneticisine aittir.
             </span>
         </div>
         """,
             unsafe_allow_html=True,
         )
 
-
 else:
-    st.info("Filtrelerle eşleşen borçlu bulunamadı. Filtreleri genişletin.")
-
+    st.info("Seçilen filtre kriterlerine uygun borçlu bulunamadı. Lütfen filtre aralığını genişletin.")
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
@@ -1014,10 +831,9 @@ st.markdown("<hr>", unsafe_allow_html=True)
 # ──────────────────────────────────────────────────────────────
 st.markdown(
     """
-<div style='text-align: center; padding: 20px; color: #4a6fa5; font-size: 0.78rem;'>
-    <b style='color: #718096;'>Zolvo Collection AI PoC</b> ·
-    Zolvo Case Study · Oktavis × Tessera Lab · Haziran 2026<br>
-    Python · Streamlit · Groq API (Llama 3.3 70B) · Açıklanabilir Kural Tabanlı Skorlama
+<div style='text-align: center; padding: 18px; color: #4a6fa5; font-size: 0.75rem;'>
+    <b style='color: #718096;'>AI Risk Scoring Platform</b> · IFRS 9 & Basel II Quantitative Credit Framework<br>
+    Python · Streamlit · Groq API (Llama 3.3 70B) · Non-Linear Risk Modeling · Expected Loss Engine
 </div>
 """,
     unsafe_allow_html=True,

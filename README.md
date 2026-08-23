@@ -1,7 +1,7 @@
 <div align="center">
 
 # 🏦 AI Risk Scoring
-### B2B Alacak Yönetimi için Yapay Zeka Destekli Borçlu Önceliklendirme Platformu
+### B2B Alacak Yönetimi için IFRS 9 Uyumlu Yapay Zeka Risk & Finansal Kayıp Platformu
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.35%2B-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io)
@@ -9,8 +9,8 @@
 [![Cloudflare](https://img.shields.io/badge/Cloudflare-Workers-F48120?style=flat-square&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
 
-> **Kural tabanlı risk skorlama algoritması** ile **Llama 3.3 70B büyük dil modeli** entegrasyonunu birleştiren,  
-> B2B tahsilat ekipleri için açıklanabilir yapay zeka karar destek sistemi.
+> **IFRS 9 / Basel II Kredi Riski Standartları**, **Non-Linear Risk Eğrileri**, **Beklenen Finansal Zarar ($EL = PD \times LGD \times EAD$)**  
+> ve **Llama 3.3 70B Büyük Dil Modeli** ile geliştirilmiş kurumsal B2B tahsilat ve alacak istihbaratı platformu.
 
 </div>
 
@@ -20,25 +20,29 @@
 
 ---
 
-## 🎯 Projenin Amacı
+## 🎯 Projenin Amacı & Finansal Katma Değer
 
-Geleneksel B2B tahsilat süreçlerinde borçlular genellikle **sadece gecikme günü veya tutar** gibi tek bir kritera göre önceliklendirilir. Bu yaklaşım eksik ve subjektiftir.
+Geleneksel B2B alacak yönetiminde borçlular yalnızca doğrusal gecikme gününe göre sıralanır; bu durum portföydeki gerçek **finansal sermaye kaybını** gizler.
 
-Bu proje, 6 farklı boyutu ağırlıklı bir formülle birleştirerek **0-100 arası matematiksel bir risk skoru** üretir ve bu kararı bir LLM aracılığıyla **insan analist dilinde açıklar**. Sonuç: daha hızlı, daha tutarlı ve savunulabilir tahsilat kararları.
+Bu platform:
+1. **IFRS 9 / Basel II Kredi Aşamalandırması (Staging)** mantığını B2B faturaya uyarlar.
+2. Soyut puanların ötesine geçerek **Beklenen Finansal Zararı (Expected Loss in USD)** hesaplar.
+3. Çok boyutlu **6 Faktörlü Radar Grafiği** ile borçluyu portföy ortalamasıyla kıyaslar.
+4. **Llama 3.3 70B** aracılığıyla tahsilat yöneticisine savunulabilir, finansal kanıtlara dayalı **Açıklanabilir AI (XAI)** kararları üretir.
 
 ---
 
-## ✨ Özellikler
+## ✨ Öne Çıkan Özellikler
 
 | Özellik | Açıklama |
 |---------|----------|
-| **📊 6 Faktörlü Risk Skoru** | Gecikme, tutar, ödeme geçmişi, sektör riski, kredi notu ve iletişim sıklığı |
-| **🤖 LLM Açıklaması** | Llama 3.3 70B, neden o aksiyonun önerildiğini Türkçe/İngilizce açıklar |
-| **📈 Trend Analizi** | 6 faturalık geçmiş gecikme trendi — kötüleşen borçlular erken tespit edilir |
-| **🔒 Güvenli API Mimarisi** | API anahtarları hiçbir zaman istemci tarafında açığa çıkmaz (Cloudflare proxy) |
-| **📉 Görsel Analitik** | Sektörel dağılım pie chart, bireysel sparkline grafikler, skor bileşen breakdown |
-| **📥 CSV Dışa Aktarım** | Filtrelenmiş portföyü tek tıkla export et |
-| **🌐 Çift Dil Desteği** | LLM açıklamaları Türkçe veya İngilizce üretilebilir |
+| **📈 IFRS 9 Kredi Staging** | Stage 1 (Sağlıklı 0-30g), Stage 2 (SICR 31-89g), Stage 3 (Temerrüt 90+g) |
+| **💰 Beklenen Zarar (EL)** | $EL = PD \times LGD \times EAD$ formülüyle risk altındaki net dolar tutarı |
+| **🕸️ 6 Boyutlu Risk Radarı** | Borçlunun risk poligonunu portföy benchmark'ı ile kıyaslayan Plotly Radar Chart |
+| **🎛️ Stres Testi & Senaryolar** | Standart Model, Makroekonomik Kriz ve Likidite Odaklı dinamik ağırlık profilleri |
+| **🤖 Llama 3.3 70B XAI Motoru** | Groq API üzerinden finansal göstergeleri Türkçe/İngilizce stratejik özete çevirir |
+| **🔒 Edge Proxy Güvenliği** | Cloudflare Workers ile istemci tarafında sıfır API anahtarı ifşası |
+| **🚨 Kritik Uyarı Paneli** | Portföydeki en yüksek riskli 5 borçlu için anlık finansal alarm kartları |
 
 ---
 
@@ -46,13 +50,13 @@ Bu proje, 6 farklı boyutu ağırlıklı bir formülle birleştirerek **0-100 ar
 
 ```mermaid
 graph TD
-    A[🏢 Streamlit UI<br/>app.py] -->|Debtor ID| B[📊 Scoring Engine<br/>scoring_engine.py]
-    A -->|LLM isteği| C[☁️ Cloudflare Worker<br/>Edge Proxy]
-    B -->|Risk Score 0-100| A
-    C -->|API Key inject| D[⚡ Groq API<br/>Llama 3.3 70B]
-    D -->|Açıklama metni| C
-    C -->|Güvenli yanıt| A
-    E[🎲 Data Generator<br/>data_generator.py] -->|50 borçlu| A
+    A[🏢 Streamlit Dashboard<br/>app.py] -->|Profil & Borçlu ID| B[📊 Scoring Engine<br/>IFRS 9 + Expected Loss]
+    A -->|XAI İsteği| C[☁️ Cloudflare Worker<br/>Edge Proxy]
+    B -->|PD, LGD, EL, Risk Skoru| A
+    C -->|Encrypted Secret| D[⚡ Groq API<br/>Llama 3.3 70B]
+    D -->|Stratejik XAI Raporu| C
+    C -->|Güvenli Yanıt| A
+    E[🎲 Synthetic Generator<br/>data_generator.py] -->|B2B Portföy Verisi| A
 
     style A fill:#1a365d,color:#90cdf4
     style B fill:#1a2744,color:#90cdf4
@@ -61,164 +65,87 @@ graph TD
     style E fill:#2d1b4e,color:#d6bcfa
 ```
 
-### Bileşenler
+---
 
-| Dosya | Rol |
-|-------|-----|
-| [`data_generator.py`](data_generator.py) | Gerçekçi B2B borçlu profili üretir (sektör, kredi notu, geçmiş gecikmeler) |
-| [`scoring_engine.py`](scoring_engine.py) | 6 faktörlü ağırlıklı formülü uygular, 0-100 risk skoru üretir |
-| [`llm_engine.py`](llm_engine.py) | Borçlu bağlamını prompt'a çevirir, Groq API ile açıklama üretir |
-| [`app.py`](app.py) | Streamlit arayüzü — filtreler, tablolar, grafikler, LLM entegrasyonu |
+## ⚖️ Finansal Risk Modeli & Formülasyon
+
+### 1. Beklenen Zarar Formülü (Expected Loss - EL)
+
+$$\text{Expected Loss (EL)} = \text{PD} \times \text{LGD} \times \text{EAD}$$
+
+- **PD (Probability of Default):** Kompozit risk skorundan kalibre edilen lojistik temerrüt olasılığı:
+  $$PD = \frac{1}{1 + e^{-0.075 \times (\text{Risk Skoru} - 50)}}$$
+- **LGD (Loss Given Default):** Sektörel tahsilat kaybı çarpanı:
+  - *İnşaat:* %65 | *Perakende:* %55 | *Lojistik:* %45 | *Üretim:* %35 | *Teknoloji:* %25 | *Sağlık:* %15
+- **EAD (Exposure at Default):** Açık fatura tutarı ($ USD).
 
 ---
 
-## ⚖️ Risk Formülü
+### 2. IFRS 9 Kredi Riski Aşamaları (Staging)
 
-Algoritma 6 boyutu ağırlıklı olarak birleştirir:
-
-```
-Risk Skoru =
-  (Gecikme Günü × 0.30)   +
-  (Açık Tutar   × 0.20)   +
-  (Ödeme Geçmişi × 0.15)  +   ← Ters orantılı: iyi geçmiş = düşük risk
-  (Sektör Riski × 0.15)   +
-  (Kredi Notu   × 0.10)   +
-  (Son İletişim × 0.10)   +
-  Trend Bonusu (±15)           ← Hızlı kötüleşme +15, hızlı iyileşme -10
-```
-
-**Aksiyon Eşikleri:**
-
-| Skor | Aksiyon | Anlamı |
-|------|---------|--------|
-| 80–100 | 🔴 Hemen Ara | Kritik — derhal müdahale |
-| 60–79 | 🟠 E-posta At | Yüksek risk — yazılı iletişim |
-| 40–59 | 🟡 Takipte Tut | Orta risk — izlemeye al |
-| 0–39 | 🟢 Bekle | Düşük risk — bekle |
-
-**Sektör Risk Ağırlıkları:**
-
-| Sektör | Risk Puanı |
-|--------|-----------|
-| İnşaat | 100 (En Yüksek) |
-| Perakende | 80 |
-| Lojistik | 60 |
-| Üretim | 40 |
-| Teknoloji | 20 |
-| Sağlık | 10 (En Düşük) |
+| Aşama | Gecikme / Kriter | Anlamı & Aksiyon |
+|-------|------------------|-------------------|
+| **🟢 Stage 1** | 0 – 30 gün | **Sağlıklı (Performing):** Düşük PD, olağan faturalama döngüsü $\rightarrow$ *🟢 Bekle* |
+| **🟠 Stage 2** | 31 – 89 gün / Kötüleşen Trend | **SICR (Önemli Risk Artışı):** Dikleşen risk eğrisi $\rightarrow$ *🟠 E-posta / Yapılandırma* |
+| **🔴 Stage 3** | 90+ gün / Skor $\ge 80$ | **Temerrüt (Credit-Impaired):** Değer düşüklüğü $\rightarrow$ *🔴 Hemen Ara / İcra* |
 
 ---
 
-## 🖥️ Ekran Görüntüleri
+### 3. Model Senaryoları & Ağırlık Profilleri
 
-**Borçlu Tablosu & Filtreleme:**
+Platform, makroekonomik koşullara göre 3 farklı stres profili sunar:
 
+| Parametre | ⚖️ Dengeli Model | 🚨 Makro Kriz Modu | 💰 Likidite Modu |
+|-----------|-----------------|-------------------|------------------|
+| **Non-Linear Gecikme** | %30 | %20 | %35 |
+| **Açık Tutar (Log)** | %20 | %15 | %35 |
+| **Sektör Riski (LGD)** | %15 | %25 | %5 |
+| **Kredi Notu (PD)** | %10 | %20 | %5 |
+| **Ödeme Geçmişi** | %15 | %10 | %10 |
+| **İletişim Aralığı** | %10 | %10 | %10 |
+
+---
+
+## 🖥️ Arayüz ve Görsel Analitik
+
+**Portföy Tablosu & Finansal Metrikler:**
 ![Borçlu Tablosu](assets/dashboard_table.png)
 
-**Bireysel Borçlu Analizi & AI Açıklaması:**
-
+**Bireysel Borçlu Analizi, Radar Grafiği & AI Karar Açıklaması:**
 ![Detaylı Analiz & AI Açıklaması](assets/dashboard_details.png)
 
 ---
 
-## 🔒 Güvenlik Mimarisi
+## 🔒 Güvenlik & Mimari Katmanı
 
-Bu proje, API anahtarlarını istemci tarafında **hiçbir zaman** açığa çıkarmaz:
-
-```
-Streamlit App  →  Cloudflare Worker  →  Groq API
-     ↓                   ↓
-  API key yok      API key inject      Llama 3.3 70B
-  (güvenli)        (edge secret)       yanıtı döner
+```text
+Streamlit Arayüzü  ──(API Key Yok)──>  Cloudflare Worker Proxy  ──(Encrypted Secret)──>  Groq Llama 3.3 70B
 ```
 
-Cloudflare Worker sunucusuz bir edge proxy olarak çalışır. `ZOLVO_API_KEY` yalnızca Cloudflare'in encrypted secrets deposunda tutulur.
+- API anahtarları istemci kodunda veya tarayıcıda bulunmaz.
+- Cloudflare Edge katmanı hız sınırlandırması (rate-limiting) ve anahtar gizliliği sağlar.
 
 ---
 
-## 🚀 Kurulum
+## 🚀 Hızlı Başlangıç
 
-### Gereksinimler
-- Python 3.10+
-- Cloudflare hesabı (güvenlik katmanı için)
-- Groq API anahtarı
-
-### Adımlar
-
-**1. Repoyu klonla**
 ```bash
+# 1. Repoyu klonla
 git clone https://github.com/emreerbasli/ai-risk-scoring.git
 cd ai-risk-scoring
-```
 
-**2. Bağımlılıkları yükle**
-```bash
+# 2. Bağımlılıkları yükle
 pip install -r requirements.txt
-```
 
-**3. Cloudflare Worker'ı yapılandır**
-
-Cloudflare Dashboard'da bir Worker oluştur ve Groq API anahtarını `ZOLVO_API_KEY` adıyla encrypted secret olarak ekle.
-
-`llm_engine.py` dosyasındaki `base_url` parametresini kendi Worker URL'inle güncelle:
-```python
-base_url = "https://your-worker.your-subdomain.workers.dev"
-```
-
-**4. Uygulamayı başlat**
-```bash
+# 3. Uygulamayı çalıştır
 streamlit run app.py
 ```
-
-Uygulama varsayılan olarak `http://localhost:8501` adresinde açılır.
-
----
-
-## 🛠️ Teknoloji Yığını
-
-| Katman | Teknoloji |
-|--------|-----------|
-| **Arayüz** | Python · Streamlit |
-| **Veri İşleme** | Pandas · NumPy |
-| **Görselleştirme** | Plotly |
-| **Yapay Zeka (LLM)** | Meta Llama 3.3 70B · Groq API |
-| **Güvenlik Proxy** | Cloudflare Workers (Serverless Edge) |
-| **Versiyon Kontrolü** | Git · GitHub |
-
----
-
-## 📁 Proje Yapısı
-
-```
-ai-risk-scoring/
-├── app.py                 # Ana Streamlit arayüzü (dashboard, filtreler, LLM entegrasyonu)
-├── scoring_engine.py      # 6 faktörlü risk skorlama algoritması
-├── data_generator.py      # Gerçekçi B2B borçlu verisi üretici
-├── llm_engine.py          # Groq API entegrasyonu ve prompt mühendisliği
-├── requirements.txt       # Python bağımlılıkları
-├── assets/                # Ekran görüntüleri
-│   ├── dashboard_top.png
-│   ├── dashboard_table.png
-│   └── dashboard_details.png
-└── .gitignore
-```
-
----
-
-## 🔮 Potansiyel Geliştirmeler
-
-- [ ] Gerçek zamanlı ERP / muhasebe sistemi entegrasyonu (SAP, Logo)
-- [ ] REST API katmanı (FastAPI) — diğer sistemlerin risk skoru sorgulayabilmesi için  
-- [ ] Zaman serisi bazlı makine öğrenmesi modeli (kural tabanlı sistemin yanında)
-- [ ] E-posta ve SMS otomasyonu (aksiyonu doğrudan tetikle)
-- [ ] Multi-tenant yapı (birden fazla şirket portföyü)
 
 ---
 
 <div align="center">
 
-**Geliştirici:** [Emre Erbaşlı](https://github.com/emreerbasli)
-
-*Bu proje, Generatif Yapay Zeka'nın B2B tahsilat süreçlerine entegrasyonunu gösteren bir Proof of Concept çalışmasıdır.*
+**Geliştirici:** [Emre Erbaşlı](https://github.com/emreerbasli)  
+*IFRS 9 & Basel II Quantitative Credit Intelligence PoC*
 
 </div>

@@ -1,11 +1,9 @@
 """
 Collections Intelligence - Groq LLM Explanation Engine
-Zolvo Case Study PoC
+Explainable AI (XAI) for B2B Debt Collection & Financial Risk
 
-Her borçlu için açıklanabilir karar metni üretir.
-Model: Llama 3.3 70B via Groq API (ücretsiz tier)
-
-NOT: LLM karar VERMEZ — açıklar. Bu kritik ayrımdır.
+Model: Llama 3.3 70B via Groq API
+Includes IFRS 9 Staging and Expected Loss (EL = PD x LGD x EAD) context.
 """
 
 import os
@@ -13,14 +11,11 @@ import time
 import pandas as pd
 from groq import Groq
 
-# Proje API model
 _DEFAULT_MODEL = "llama-3.3-70b-versatile"
 
 
-
 def get_groq_client():
-    """Groq client'ı başlat"""
-    # API key Cloudflare üzerinde saklanıyor, proxy URL üzerinden erişiyoruz
+    """Groq client'ı başlat (Cloudflare edge proxy üzerinden)"""
     return Groq(
         api_key="secured-by-cloudflare",
         base_url="https://zolvo-groq-proxy.emrezeynoel.workers.dev"
@@ -29,62 +24,68 @@ def get_groq_client():
 
 def build_explanation_prompt(row: pd.Series, language: str = "tr") -> str:
     """
-    Borçlu verilerinden LLM prompt'u oluştur.
-    LLM sadece açıklar, karar vermez.
+    Borçlu verilerinden zengin finansal bağlamlı LLM prompt'u oluştur.
+    LLM karar vermez, analiste açıklanabilir stratejik özet sunar.
     """
     trend_map = {
-        -2: "hızla kötüleşiyor",
-        -1: "kötüleşiyor",
+        -2: "hızla kötüleşiyor (-15 puan)",
+        -1: "kötüleşiyor (-7 puan)",
         0: "stabil",
-        1: "iyileşiyor",
-        2: "hızla iyileşiyor",
+        1: "iyileşiyor (+5 puan)",
+        2: "hızla iyileşiyor (+10 puan)",
     }
-    trend_text = trend_map.get(row["trend"], "stabil")
+    trend_text = trend_map.get(row.get("trend", 0), "stabil")
 
     action_clean = (
-        row["action"]
+        str(row.get("action", ""))
         .replace("🔴 ", "")
         .replace("🟠 ", "")
         .replace("🟡 ", "")
         .replace("🟢 ", "")
     )
 
+    stage_label = row.get("ifrs9_stage_label", "Stage 2")
+    pd_pct = row.get("pd_pct", 50.0)
+    lgd_pct = row.get("lgd_pct", 40.0)
+    el_amount = row.get("expected_loss", 0.0)
+    out_amount = row.get("outstanding_amount", 0.0)
+
     if language == "tr":
-        prompt = f"""Bir Collections Intelligence sistemisin. Aşağıdaki borçlu için, neden bu aksiyonun önerildiğini 1-2 cümleyle açıkla.
-KURAL: Sadece açıkla, karar VERME. İnsan yönetici nihai kararı verir.
-Ton: Profesyonel, net, finansal.
+        prompt = f"""Sen kurumsal bir Fintech Kredi Riski ve Collections Intelligence AI uzmanısın.
+Aşağıdaki B2B borçlu profili için önerilen aksiyonun finansal gerekçesini 2 kısa cümleyle açıkla.
 
-Borçlu: {row['debtor_name']}
-Sektör: {row.get('sector', 'Bilinmiyor')}
-Kredi Notu: {row.get('credit_rating', 'Bilinmiyor')}
-Açık Fatura Sayısı: {row.get('invoice_count', 1)}
-Risk Skoru: {row['risk_score']}/100
-Önerilen Aksiyon: {action_clean}
-Gecikme Günü: {row['days_overdue']} gün
-Açık Tutar: {row['outstanding_amount']:,.0f} USD
-Ödeme Geçmiş Skoru: {row['payment_history_score']}/100
-Son İletişimden Bu Yana: {row['days_since_contact']} gün
-Gecikme Trendi: {trend_text}
+BAĞLAM:
+- Borçlu: {row.get('debtor_name')}
+- Sektör / LGD: {row.get('sector', 'Bilinmiyor')} (Temerrüt Kaybı: %{lgd_pct})
+- Kredi Notu: {row.get('credit_rating', 'Bilinmiyor')}
+- IFRS 9 Kredi Aşaması: {stage_label}
+- Temerrüt Olasılığı (PD): %{pd_pct}
+- Beklenen Finansal Zarar (EL): ${el_amount:,.0f} USD (Toplam Açık: ${out_amount:,.0f} USD)
+- Gecikme Süresi: {row.get('days_overdue', 0)} gün (Ödeme Trendi: {trend_text})
+- Ödeme Geçmişi: {row.get('payment_history_score', 50)}/100 | Son İletişim: {row.get('days_since_contact', 0)} gün önce
+- Kompozit Risk Skoru: {row.get('risk_score', 0)}/100
+- Önerilen Aksiyon: {action_clean}
 
-Tek paragraf, maksimum 2 cümle. Türkçe yaz."""
+KURAL: Sadece açıkla ve risk faktörlerine vurgu yap, nihai kararı insan yöneticiye bırak.
+Maksimum 2 cümle. Profesyonel finansal Türkçe ton kullan."""
     else:
-        prompt = f"""You are a Collections Intelligence system. Explain in 1-2 sentences why this action is recommended for the following debtor.
-RULE: Only explain, do NOT make the decision. The human manager makes the final call.
-Tone: Professional, concise, financial.
+        prompt = f"""You are an enterprise Fintech Credit Risk & Collections Intelligence AI expert.
+Explain in 2 concise sentences the financial rationale behind the recommended action for this B2B debtor.
 
-Debtor: {row['debtor_name']}
-Sector: {row.get('sector', 'Unknown')}
-Credit Rating: {row.get('credit_rating', 'Unknown')}
-Invoice Count: {row.get('invoice_count', 1)}
-Risk Score: {row['risk_score']}/100
-Recommended Action: {action_clean}
-Days Overdue: {row['days_overdue']} days
-Outstanding Amount: {row['outstanding_amount']:,.0f} USD
-Payment History Score: {row['payment_history_score']}/100
-Days Since Last Contact: {row['days_since_contact']} days
-Trend: {trend_text}
+CONTEXT:
+- Debtor: {row.get('debtor_name')}
+- Sector / LGD: {row.get('sector', 'Unknown')} (Loss Given Default: {lgd_pct}%)
+- Credit Rating: {row.get('credit_rating', 'Unknown')}
+- IFRS 9 Stage: {stage_label}
+- Probability of Default (PD): {pd_pct}%
+- Expected Loss (EL): ${el_amount:,.0f} USD (Outstanding Exposure: ${out_amount:,.0f} USD)
+- Overdue Period: {row.get('days_overdue', 0)} days (Payment Trend: {trend_text})
+- Payment History: {row.get('payment_history_score', 50)}/100 | Last Contact: {row.get('days_since_contact', 0)} days ago
+- Composite Risk Score: {row.get('risk_score', 0)}/100
+- Recommended Action: {action_clean}
 
-Single paragraph, max 2 sentences. Write in English."""
+RULE: Only explain and highlight specific financial risk drivers. Do NOT make the final executive decision.
+Maximum 2 sentences. Professional quantitative tone in English."""
 
     return prompt
 
@@ -93,7 +94,6 @@ def generate_explanation(
     client: Groq, row: pd.Series, language: str = "tr", model: str = _DEFAULT_MODEL
 ) -> str:
     """Tek bir borçlu için Groq API'si ile açıklama üret"""
-
     prompt = build_explanation_prompt(row, language)
 
     try:
@@ -102,77 +102,19 @@ def generate_explanation(
             messages=[
                 {
                     "role": "system",
-                    "content": "Sen bir fintech AI sistemisin. Kısa, net ve açıklanabilir kararlar üretirsin. Asla spekülatif veya kesin tahmin yapmazsın.",
+                    "content": "Sen kurumsal kredi riski ve tahsilat istihbaratı alanında uzmanlaşmış bir XAI (Explainable AI) motorusun. Net, analitik ve kanıta dayalı çıktılar üretirsin.",
                 },
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=150,
-            temperature=0.3,  # Tutarlı çıktı için düşük temperature
+            max_tokens=180,
+            temperature=0.25,
         )
-
         return response.choices[0].message.content.strip()
-
     except Exception as e:
         return f"[API Hatası: {str(e)[:80]}]"
 
 
-def generate_all_explanations(
-    df: pd.DataFrame, language: str = "tr", max_rows: int = None, delay: float = 0.3
-) -> pd.DataFrame:
-    """
-    Tüm portföy için açıklamalar üret.
-    Rate limit aşımını önlemek için delay ekle.
-
-    Args:
-        df: Skorlanmış borçlu DataFrame'i
-        language: 'tr' veya 'en'
-        max_rows: Sadece ilk N borçluyu işle (test için)
-        delay: API çağrıları arası bekleme (saniye)
-    """
-    client = get_groq_client()
-
-    if max_rows:
-        df = df.head(max_rows)
-
-    explanations = []
-
-    for idx, row in df.iterrows():
-        explanation = generate_explanation(client, row, language)
-        explanations.append(explanation)
-
-        # Rate limit koruması
-        if delay > 0:
-            time.sleep(delay)
-
-    df = df.copy()
-    col_name = f"explanation_{language}"
-    df[col_name] = explanations
-
-    return df
-
-
 def get_single_explanation(row: pd.Series, language: str = "tr") -> str:
     """Dashboard'da tek borçlu için on-demand açıklama"""
-    try:
-        client = get_groq_client()
-        return generate_explanation(client, row, language)
-    except Exception as e:
-        return f"Açıklama üretilemiyor: {str(e)[:100]}"
-
-
-if __name__ == "__main__":
-    # Test: İlk 3 borçlu için açıklama üret
-    from data_generator import generate_mock_debtors
-    from scoring_engine import score_portfolio
-
-    df = generate_mock_debtors()
-    scored = score_portfolio(df)
-
-    print("İlk 3 yüksek riskli borçlu için açıklama üretiliyor...")
-    result = generate_all_explanations(scored, language="tr", max_rows=3)
-
-    for _, row in result.iterrows():
-        print(f"\n{'='*60}")
-        print(f"Borçlu: {row['debtor_name']}")
-        print(f"Risk Skoru: {row['risk_score']} | Aksiyon: {row['action']}")
-        print(f"Açıklama: {row['explanation_tr']}")
+    client = get_groq_client()
+    return generate_explanation(client, row, language)
