@@ -11,15 +11,13 @@ __pycache__/
 env/
 venv/
 
-# Test & debug scripts (geliştirme amaçlı, prod'a dahil değil)
-test_llm.py
-check_models.py
-read_docx.py
-docx_content.txt
-
-# Case study dokümanları (şirket gizliliği)
+# Case study dokümanları & geçici metinler
 *.docx
 *.doc
+docx_content.txt
+read_docx.py
+check_models.py
+test_llm.py
 
 # OS
 .DS_Store
@@ -29,5 +27,5 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Streamlit
-.streamlit/
+# Streamlit secrets (config.toml repoda kalır, secrets.toml dışlanır)
+.streamlit/secrets.toml

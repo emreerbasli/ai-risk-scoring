@@ -1,11 +1,12 @@
 """
-Collections Intelligence - Advanced Risk Scoring & Financial Loss Engine
+Collections Intelligence - Advanced Quantitative Risk Scoring Engine
 IFRS 9 / Basel II Staging, Non-Linear Sigmoidal Scoring, and Expected Loss (EL = PD x LGD x EAD)
 
 Zolvo Case Study / AI Risk Scoring
 """
 
 import math
+from typing import Dict, Any, Union
 import numpy as np
 import pandas as pd
 
@@ -13,7 +14,7 @@ import pandas as pd
 # ──────────────────────────────────────────────────────────────
 # MODEL AĞIRLIK PROFİLLERİ (Senaryolar / Stres Testi)
 # ──────────────────────────────────────────────────────────────
-MODEL_PROFILES = {
+MODEL_PROFILES: Dict[str, Dict[str, Any]] = {
     "balanced": {
         "name": "Standart / Dengeli Model",
         "description": "Basel II uyumlu dengeli risk modeli.",
@@ -53,7 +54,7 @@ MODEL_PROFILES = {
 }
 
 # Sektör Bazlı Kayıp Oranı (Loss Given Default - LGD)
-SECTOR_LGD_MAP = {
+SECTOR_LGD_MAP: Dict[str, float] = {
     "İnşaat": 0.65,    # Yüksek temerrüt kaybı
     "Perakende": 0.55,
     "Lojistik": 0.45,
@@ -62,71 +63,79 @@ SECTOR_LGD_MAP = {
     "Sağlık": 0.15,    # Düşük temerrüt kaybı / yüksek tahsil edilebilirlik
 }
 
-SECTOR_RISK_MAP = {
-    "İnşaat": 100,
-    "Perakende": 80,
-    "Lojistik": 60,
-    "Üretim": 40,
-    "Teknoloji": 20,
-    "Sağlık": 10,
+SECTOR_RISK_MAP: Dict[str, float] = {
+    "İnşaat": 100.0,
+    "Perakende": 80.0,
+    "Lojistik": 60.0,
+    "Üretim": 40.0,
+    "Teknoloji": 20.0,
+    "Sağlık": 10.0,
 }
 
-CREDIT_RATING_RISK_MAP = {
-    "A": 10,
-    "B": 35,
-    "C": 70,
-    "D": 100,
+CREDIT_RATING_RISK_MAP: Dict[str, float] = {
+    "A": 10.0,
+    "B": 35.0,
+    "C": 70.0,
+    "D": 100.0,
 }
 
 
 # ──────────────────────────────────────────────────────────────
 # NORMALİZASYON & NON-LINEAR EĞRİLER
 # ──────────────────────────────────────────────────────────────
-def normalize_overdue_nonlinear(days: float) -> float:
+def normalize_overdue_nonlinear(days: Union[int, float, None]) -> float:
     """
     Doğrusal olmayan (Sigmoidal / Kademeli) gecikme eğrisi.
     - 0-30 gün (Stage 1): Yavaş risk artışı (0-25 puan)
     - 31-89 gün (Stage 2 SICR): Dik risk artışı (25-85 puan)
     - 90+ gün (Stage 3 Default): Temerrüt doygunluğu (85-100 puan)
     """
-    if days <= 0:
+    if days is None or math.isnan(float(days)):
         return 0.0
-    elif days <= 30:
-        # 0 - 25 arası yumuşak kavis
-        return (days / 30.0) ** 1.3 * 25.0
-    elif days <= 90:
-        # 25 - 85 arası dikleşen eğri
-        ratio = (days - 30.0) / 60.0
+    d = float(days)
+    if d <= 0.0:
+        return 0.0
+    elif d <= 30.0:
+        return (d / 30.0) ** 1.3 * 25.0
+    elif d <= 90.0:
+        ratio = (d - 30.0) / 60.0
         return 25.0 + (ratio ** 0.85) * 60.0
     else:
-        # 90+ gün: 85 - 100 arası temerrüt doygunluğu
-        over = min(days - 90.0, 30.0) / 30.0
+        over = min(d - 90.0, 30.0) / 30.0
         return 85.0 + over * 15.0
 
 
-def normalize_amount(amount: float, max_amount: float = 500000) -> float:
-    """Açık tutarı logaritmik kavisle 0-100 arasına normalize et"""
-    if amount <= 0:
+def normalize_amount(amount: Union[int, float, None], max_amount: float = 500000.0) -> float:
+    """Açık tutarı logaritmik kavisle 0-100 arasına normalize eder."""
+    if amount is None or math.isnan(float(amount)):
         return 0.0
-    # Log ölçeklendirme ile yüksek tutarların etkisini yumuşatırken küçükleri de ayırt et
-    log_amt = math.log10(max(amount, 1000))
-    log_min = math.log10(1000)
+    amt = float(amount)
+    if amt <= 0.0:
+        return 0.0
+    log_amt = math.log10(max(amt, 1000.0))
+    log_min = math.log10(1000.0)
     log_max = math.log10(max_amount)
-    score = (log_amt - log_min) / (log_max - log_min) * 100
+    score = (log_amt - log_min) / (log_max - log_min) * 100.0
     return max(0.0, min(100.0, score))
 
 
-def normalize_payment_history(score: float) -> float:
-    """Ödeme geçmişini ters orantılı risk skoruna çevir (100 iyi -> 0 risk)"""
-    return max(0.0, min(100.0, 100.0 - score))
+def normalize_payment_history(score: Union[int, float, None]) -> float:
+    """Ödeme geçmişini ters orantılı risk skoruna çevirir (100 iyi -> 0 risk)."""
+    if score is None or math.isnan(float(score)):
+        return 50.0
+    s = float(score)
+    return max(0.0, min(100.0, 100.0 - s))
 
 
-def normalize_contact_gap(days: float, max_days: float = 60) -> float:
-    """Son iletişimden geçen günü normalize et"""
-    return min(max(days / max_days, 0.0), 1.0) * 100.0
+def normalize_contact_gap(days: Union[int, float, None], max_days: float = 60.0) -> float:
+    """Son iletişimden geçen günü normalize eder."""
+    if days is None or math.isnan(float(days)):
+        return 50.0
+    d = float(days)
+    return min(max(d / max_days, 0.0), 1.0) * 100.0
 
 
-def calculate_trend_bonus(trend: int) -> float:
+def calculate_trend_bonus(trend: Union[int, float, None]) -> float:
     """
     Trend katkısı:
     -2: Hızlı kötüleşme → +15 puan
@@ -135,21 +144,29 @@ def calculate_trend_bonus(trend: int) -> float:
      1: İyileşme        → -5 puan
      2: Hızlı iyileşme  → -10 puan
     """
+    if trend is None or math.isnan(float(trend)):
+        return 0.0
+    t = int(trend)
     bonus_map = {-2: 15.0, -1: 7.0, 0: 0.0, 1: -5.0, 2: -10.0}
-    return bonus_map.get(trend, 0.0)
+    return bonus_map.get(t, 0.0)
 
 
 def calculate_compound_penalty(row: pd.Series) -> float:
     """
     Bileşik Risk Çarpanı (Interaction Penalty):
-    Aynı anda çoklu kritik risk sinyali varsa (Sektör yüksek + Kredi D/C + Trend Kötüleşen)
+    Aynı anda çoklu kritik risk sinyali varsa (Sektör yüksek + Kredi D/C + Trend Kötüleşen + Yüksek Gecikme)
     doğrusal toplamın ötesinde risk cezası ekler.
     """
     penalty = 0.0
-    high_sector = row.get("sector") in ["İnşaat", "Perakende"]
-    bad_credit = row.get("credit_rating") in ["C", "D"]
-    bad_trend = row.get("trend", 0) <= -1
-    high_overdue = row.get("days_overdue", 0) >= 60
+    sector = str(row.get("sector", ""))
+    credit = str(row.get("credit_rating", ""))
+    trend = int(row.get("trend") or 0)
+    overdue = float(row.get("days_overdue") or 0.0)
+
+    high_sector = sector in ["İnşaat", "Perakende"]
+    bad_credit = credit in ["C", "D"]
+    bad_trend = trend <= -1
+    high_overdue = overdue >= 60.0
 
     critical_signals = sum([high_sector, bad_credit, bad_trend, high_overdue])
     if critical_signals >= 3:
@@ -163,19 +180,28 @@ def calculate_compound_penalty(row: pd.Series) -> float:
 # ──────────────────────────────────────────────────────────────
 # IFRS 9 STAGING & EXPECTED LOSS (EL = PD x LGD x EAD)
 # ──────────────────────────────────────────────────────────────
-def calculate_ifrs9_stage(days_overdue: float, risk_score: float, trend: int, credit_rating: str) -> dict:
+def calculate_ifrs9_stage(
+    days_overdue: Union[int, float, None],
+    risk_score: float,
+    trend: Union[int, float, None] = 0,
+    credit_rating: str = "B"
+) -> Dict[str, Any]:
     """
     IFRS 9 / Basel II Kredi Riski Aşamalandırması:
     - Stage 1 (Performing / Sağlıklı): 0-30 gün gecikme, düşük PD
     - Stage 2 (SICR - Significant Increase in Credit Risk): 31-89 gün veya belirgin bozulma
     - Stage 3 (Credit-Impaired / Temerrüt): 90+ gün veya kritik risk skoru (>=80)
     """
-    if days_overdue >= 90 or risk_score >= 80:
+    d = float(days_overdue or 0.0)
+    t = int(trend or 0)
+    cr = str(credit_rating or "B")
+
+    if d >= 90.0 or risk_score >= 80.0:
         stage = 3
         stage_label = "🔴 Stage 3 (Temerrüt / Default)"
         stage_desc = "Kredi değer düşüklüğü gerçekleşti, acil tahsilat & hukuki takip."
         color = "#fc8181"
-    elif days_overdue >= 31 or trend <= -1 or credit_rating == "D" or risk_score >= 55:
+    elif d >= 31.0 or t <= -1 or cr == "D" or risk_score >= 55.0:
         stage = 2
         stage_label = "🟠 Stage 2 (SICR - Önemli Risk Artışı)"
         stage_desc = "Kredi riskinde belirgin artış (SICR), yakın izleme ve e-posta/yapılandırma."
@@ -199,14 +225,14 @@ def calculate_pd(risk_score: float) -> float:
     Risk Skorundan Kalibre Edilmiş Temerrüt Olasılığı (PD - Probability of Default).
     Sigmoid eğrisi ile 0-100 skoru %1 ile %98 arasına eşler.
     """
-    # Lojistik dönüşüm: Orta nokta 50 puan, eğim katsayısı 0.075
-    z = 0.075 * (risk_score - 50.0)
-    pd_val = 1.0 / (1.0 + math.exp(-z))
-    # 0.01 ile 0.98 arasına sınırla
+    z = 0.075 * (float(risk_score) - 50.0)
+    # Taşmayı önlemek için z'yi sınırla
+    z_clipped = max(-20.0, min(20.0, z))
+    pd_val = 1.0 / (1.0 + math.exp(-z_clipped))
     return round(float(np.clip(pd_val, 0.01, 0.98)), 4)
 
 
-def calculate_expected_loss(row: pd.Series, risk_score: float) -> dict:
+def calculate_expected_loss(row: pd.Series, risk_score: float) -> Dict[str, Any]:
     """
     Expected Loss (EL) = PD x LGD x EAD
     - PD: Probability of Default (Temerrüt Olasılığı %)
@@ -214,17 +240,17 @@ def calculate_expected_loss(row: pd.Series, risk_score: float) -> dict:
     - EAD: Exposure at Default (Açık Tutar $)
     """
     pd_rate = calculate_pd(risk_score)
-    sector = row.get("sector", "Üretim")
+    sector = str(row.get("sector", "Üretim"))
     lgd_rate = SECTOR_LGD_MAP.get(sector, 0.40)
-    ead_amount = float(row.get("outstanding_amount", 0.0))
+    ead_amount = max(0.0, float(row.get("outstanding_amount", 0.0) or 0.0))
 
     expected_loss = pd_rate * lgd_rate * ead_amount
 
     return {
         "pd_rate": pd_rate,
-        "pd_pct": round(pd_rate * 100, 1),
+        "pd_pct": round(pd_rate * 100.0, 1),
         "lgd_rate": lgd_rate,
-        "lgd_pct": round(lgd_rate * 100, 1),
+        "lgd_pct": round(lgd_rate * 100.0, 1),
         "ead_amount": ead_amount,
         "expected_loss": round(expected_loss, 2),
     }
@@ -233,21 +259,21 @@ def calculate_expected_loss(row: pd.Series, risk_score: float) -> dict:
 # ──────────────────────────────────────────────────────────────
 # KOMPOZİT RİSK SKORLAMA MOTORU
 # ──────────────────────────────────────────────────────────────
-def calculate_risk_score(row: pd.Series, profile_key: str = "balanced") -> dict:
+def calculate_risk_score(row: pd.Series, profile_key: str = "balanced") -> Dict[str, Any]:
     """
-    Her borçlu için açıklanabilir, non-linear, IFRS 9 uyumlu risk skoru hesapla.
+    Her borçlu için açıklanabilir, non-linear, IFRS 9 uyumlu risk skoru hesaplar.
     """
     profile = MODEL_PROFILES.get(profile_key, MODEL_PROFILES["balanced"])
     weights = profile["weights"]
 
     # Normalize edilmiş 6 faktör
-    overdue_norm = normalize_overdue_nonlinear(row["days_overdue"])
-    amount_norm = normalize_amount(row["outstanding_amount"])
-    history_risk = normalize_payment_history(row["payment_history_score"])
-    contact_norm = normalize_contact_gap(row["days_since_contact"])
-    sector_risk = SECTOR_RISK_MAP.get(row["sector"], 50.0)
-    credit_risk = CREDIT_RATING_RISK_MAP.get(row["credit_rating"], 50.0)
-    
+    overdue_norm = normalize_overdue_nonlinear(row.get("days_overdue"))
+    amount_norm = normalize_amount(row.get("outstanding_amount"))
+    history_risk = normalize_payment_history(row.get("payment_history_score"))
+    contact_norm = normalize_contact_gap(row.get("days_since_contact"))
+    sector_risk = SECTOR_RISK_MAP.get(str(row.get("sector", "")), 50.0)
+    credit_risk = CREDIT_RATING_RISK_MAP.get(str(row.get("credit_rating", "")), 50.0)
+
     trend_bonus = calculate_trend_bonus(row.get("trend", 0))
     compound_penalty = calculate_compound_penalty(row)
 
@@ -261,7 +287,6 @@ def calculate_risk_score(row: pd.Series, profile_key: str = "balanced") -> dict:
         + credit_risk * weights["credit"]
     )
 
-    # Trend bonusu ve bileşik ceza ile nihai skor (0-100 arası sınırla)
     final_score = max(0.0, min(100.0, base_score + trend_bonus + compound_penalty))
 
     breakdown = {
@@ -282,9 +307,8 @@ def calculate_risk_score(row: pd.Series, profile_key: str = "balanced") -> dict:
         "base_score": round(base_score, 2),
     }
 
-    # IFRS 9 & Finansal Zarar Metrikleri
     ifrs9 = calculate_ifrs9_stage(
-        row["days_overdue"], final_score, row.get("trend", 0), row.get("credit_rating", "B")
+        row.get("days_overdue"), final_score, row.get("trend", 0), row.get("credit_rating", "B")
     )
     el_data = calculate_expected_loss(row, final_score)
 
@@ -298,11 +322,11 @@ def calculate_risk_score(row: pd.Series, profile_key: str = "balanced") -> dict:
 
 def get_action(risk_score: float) -> str:
     """Aksiyon kural eşikleri"""
-    if risk_score >= 80:
+    if risk_score >= 80.0:
         return "🔴 Hemen Ara"
-    elif risk_score >= 60:
+    elif risk_score >= 60.0:
         return "🟠 E-posta At"
-    elif risk_score >= 40:
+    elif risk_score >= 40.0:
         return "🟡 Takipte Tut"
     else:
         return "🟢 Bekle"
@@ -310,11 +334,11 @@ def get_action(risk_score: float) -> str:
 
 def get_action_en(risk_score: float) -> str:
     """English action label"""
-    if risk_score >= 80:
+    if risk_score >= 80.0:
         return "Call Immediately"
-    elif risk_score >= 60:
+    elif risk_score >= 60.0:
         return "Send Email"
-    elif risk_score >= 40:
+    elif risk_score >= 40.0:
         return "Monitor"
     else:
         return "Wait"
@@ -322,18 +346,19 @@ def get_action_en(risk_score: float) -> str:
 
 def get_action_color(risk_score: float) -> str:
     """Streamlit renk kodu"""
-    if risk_score >= 80:
+    if risk_score >= 80.0:
         return "red"
-    elif risk_score >= 60:
+    elif risk_score >= 60.0:
         return "orange"
-    elif risk_score >= 40:
+    elif risk_score >= 40.0:
         return "yellow"
     else:
         return "green"
 
 
-def get_trend_label(trend: int) -> str:
+def get_trend_label(trend: Union[int, float, None]) -> str:
     """Trend etiketleri"""
+    t = int(trend or 0)
     trend_map = {
         -2: "📉 Hızlı Kötüleşiyor",
         -1: "↘️ Kötüleşiyor",
@@ -341,11 +366,14 @@ def get_trend_label(trend: int) -> str:
         1: "↗️ İyileşiyor",
         2: "📈 Hızlı İyileşiyor",
     }
-    return trend_map.get(trend, "➡️ Stabil")
+    return trend_map.get(t, "➡️ Stabil")
 
 
 def score_portfolio(df: pd.DataFrame, profile_key: str = "balanced") -> pd.DataFrame:
-    """Tüm portföyü seçilen model profiliyle skorla"""
+    """Tüm portföyü seçilen model profiliyle skorlar."""
+    if df is None or df.empty:
+        return pd.DataFrame()
+
     results = []
 
     for _, row in df.iterrows():
@@ -356,20 +384,20 @@ def score_portfolio(df: pd.DataFrame, profile_key: str = "balanced") -> pd.DataF
         el = scoring["el_data"]
 
         result = {
-            "debtor_id": row["debtor_id"],
-            "debtor_name": row["debtor_name"],
-            "sector": row["sector"],
-            "credit_rating": row["credit_rating"],
-            "invoice_count": row["invoice_count"],
-            "historical_delays": row["historical_delays"],
-            "days_overdue": row["days_overdue"],
-            "outstanding_amount": row["outstanding_amount"],
-            "payment_history_score": row["payment_history_score"],
-            "days_since_contact": row["days_since_contact"],
-            "trend": row["trend"],
-            "trend_label": get_trend_label(row["trend"]),
-            "last_contact_date": row["last_contact_date"],
-            "invoice_date": row["invoice_date"],
+            "debtor_id": row.get("debtor_id", ""),
+            "debtor_name": row.get("debtor_name", ""),
+            "sector": row.get("sector", ""),
+            "credit_rating": row.get("credit_rating", ""),
+            "invoice_count": row.get("invoice_count", 1),
+            "historical_delays": row.get("historical_delays", []),
+            "days_overdue": row.get("days_overdue", 0),
+            "outstanding_amount": row.get("outstanding_amount", 0.0),
+            "payment_history_score": row.get("payment_history_score", 50.0),
+            "days_since_contact": row.get("days_since_contact", 0),
+            "trend": row.get("trend", 0),
+            "trend_label": get_trend_label(row.get("trend", 0)),
+            "last_contact_date": row.get("last_contact_date", ""),
+            "invoice_date": row.get("invoice_date", ""),
             "risk_score": risk_score,
             "action": get_action(risk_score),
             "action_en": get_action_en(risk_score),
@@ -384,7 +412,7 @@ def score_portfolio(df: pd.DataFrame, profile_key: str = "balanced") -> pd.DataF
             "lgd_rate": el["lgd_rate"],
             "lgd_pct": el["lgd_pct"],
             "expected_loss": el["expected_loss"],
-            # Normalize Faktörler (Radar Chart için 0-100)
+            # Normalize Faktörler
             "norm_overdue": breakdown["overdue_norm"],
             "norm_amount": breakdown["amount_norm"],
             "norm_history": breakdown["history_risk"],
@@ -404,36 +432,7 @@ def score_portfolio(df: pd.DataFrame, profile_key: str = "balanced") -> pd.DataF
         results.append(result)
 
     scored_df = pd.DataFrame(results)
-
-    # Risk skoruna göre sırala (en yüksek önce)
-    scored_df = scored_df.sort_values("risk_score", ascending=False).reset_index(
-        drop=True
-    )
-    scored_df.index += 1  # 1'den başlat
+    scored_df = scored_df.sort_values("risk_score", ascending=False).reset_index(drop=True)
+    scored_df.index += 1
 
     return scored_df
-
-
-if __name__ == "__main__":
-    import sys
-
-    sys.stdout.reconfigure(encoding="utf-8")
-
-    from data_generator import generate_mock_debtors
-
-    df = generate_mock_debtors(20)
-    scored = score_portfolio(df)
-
-    display = scored[
-        [
-            "debtor_name",
-            "risk_score",
-            "ifrs9_stage_label",
-            "pd_pct",
-            "expected_loss",
-            "action_en",
-        ]
-    ].head(5)
-
-    print("=== ADVANCED RISK SCORING SAMPLE ===")
-    print(display.to_string())
