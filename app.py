@@ -1,9 +1,64 @@
 """
 Collections Intelligence - Streamlit Dashboard
-Zolvo Case Study PoC
+AI Risk Scoring — B2B Debtor Prioritization Platform
 
 Çalıştırma: streamlit run app.py
+Demo modu: Cloudflare Worker çalışmıyorsa mock LLM açıklamaları döner.
 """
+
+# Demo modu için mock açıklamalar
+_MOCK_TR = {
+    "🔴 Hemen Ara": [
+        "{days} günlük gecikme ve {amount} USD açık tutarıyla kritik risk eşiğini aşmış olan bu borçlu için, {sector} sektörünün yüksek volatilitesi göz önünde bulundurulduğunda derhal telefon görüşmesi başlatılması önerilir.",
+        "Ödeme geçmişi skoru düşük olan ve son {contact} gündür hiç iletişim kurulmamış bu borçlu için kritik risk seviyesi nedeniyle acil tahsilat görüşmesi kritik önem taşımaktadır.",
+    ],
+    "🟠 E-posta At": [
+        "Borçlunun {days} günlük gecikmesi ve kötüleşen ödeme trendi, yazılı iletişim yoluyla ödeme planı talep edilmesini gerektirmektedir; {sector} sektörü riski bu kararı desteklemektedir.",
+        "Yüksek risk skoruna rağmen ödeme geçmişi orta düzeyde olan bu borçlu için, resmi bir e-posta ile ödeme hatırlatması ve şartların netleştirilmesi tavsiye edilir.",
+    ],
+    "🟡 Takipte Tut": [
+        "Borçlunun ödeme geçmişi nispeten olumlu olup mevcut {days} günlük gecikme henüz kritik seviyeye ulaşmamıştır; sistematik takip yeterli olacaktır.",
+        "Orta risk seviyesindeki bu borçlu için periyodik izleme yeterlidir; herhangi bir olumsuz trend tespitinde aksiyon kademesi yükseltilmelidir.",
+    ],
+    "🟢 Bekle": [
+        "Bu borçlunun güçlü ödeme geçmişi ve düşük gecikme süresi göz önünde bulundurulduğunda, müdahale gerektiren bir risk faktörü bulunmamaktadır.",
+        "Düşük risk profiline sahip olan bu borçlu için bekleme stratejisi uygundur; mevcut ödeme davranışı devam ettiği sürece aksiyon alınmasına gerek yoktur.",
+    ],
+}
+
+_MOCK_EN = {
+    "🔴 Hemen Ara": [
+        "With {days} days overdue and an outstanding balance of {amount} USD, this debtor has exceeded the critical risk threshold; immediate phone contact is strongly recommended given the high volatility in the {sector} sector.",
+        "This debtor's low payment history score combined with {contact} days of no contact places them firmly in the critical action category requiring immediate collection outreach.",
+    ],
+    "🟠 E-posta At": [
+        "The debtor's {days}-day overdue status and deteriorating payment trend warrant a formal written communication requesting a payment plan, particularly given the {sector} sector risk premium.",
+        "Despite an elevated risk score, the debtor's moderate payment history suggests a structured email reminder with clear payment terms would be the appropriate next step.",
+    ],
+    "🟡 Takipte Tut": [
+        "The debtor's relatively positive payment history and manageable {days}-day overdue period do not yet warrant escalation; systematic monitoring is the appropriate response.",
+        "At this moderate risk level, periodic monitoring is sufficient; the action tier should be elevated if any negative trend is detected.",
+    ],
+    "🟢 Bekle": [
+        "This debtor's strong payment history and minimal overdue period present no actionable risk factors at this time.",
+        "The low-risk profile of this debtor makes a wait strategy appropriate; no intervention is needed as long as current payment behavior continues.",
+    ],
+}
+
+
+def get_mock_explanation(debtor_row, lang_code: str = "tr") -> str:
+    """API çağrısı yapmadan borçluya özgü mock açıklama döndür."""
+    pool = _MOCK_TR if lang_code == "tr" else _MOCK_EN
+    action = debtor_row["action"]
+    templates = pool.get(action, pool["🟢 Bekle"])
+    template = templates[hash(str(debtor_row["debtor_id"])) % len(templates)]
+    return template.format(
+        days=debtor_row.get("days_overdue", "?"),
+        amount=f"{debtor_row.get('outstanding_amount', 0):,.0f}",
+        sector=debtor_row.get("sector", ""),
+        contact=debtor_row.get("days_since_contact", "?"),
+    )
+
 
 import streamlit as st
 import io
@@ -337,6 +392,35 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
+    st.markdown("<hr>", unsafe_allow_html=True)
+    st.markdown(
+        """
+    <div style='padding: 12px; background: rgba(26,54,93,0.35);
+         border-radius: 8px; border: 1px solid rgba(99,179,237,0.12);'>
+        <div style='color: #4a6fa5; font-size: 0.7rem; font-weight: 700;
+             text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;'>
+            📖 Bu Proje Hakkında
+        </div>
+        <div style='color: #718096; font-size: 0.73rem; line-height: 1.8;'>
+            Kural tabanlı risk skoru + Llama 3.3 70B açıklaması
+            ile B2B tahsilat zekası PoC'u.<br><br>
+            <b style='color:#63b3ed'>Stack:</b> Python · Streamlit · Groq<br>
+            <b style='color:#63b3ed'>Güvenlik:</b> Cloudflare Workers<br>
+            <b style='color:#63b3ed'>Model:</b> Llama 3.3 70B
+        </div>
+        <div style='margin-top: 10px;'>
+            <a href='https://github.com/emreerbasli/ai-risk-scoring'
+               target='_blank'
+               style='color: #63b3ed; font-size: 0.73rem; text-decoration: none;'>
+                🔗 GitHub Repo ↗
+            </a>
+        </div>
+    </div>
+    """,
+        unsafe_allow_html=True,
+    )
+
+
 
 # ──────────────────────────────────────────────────────────────
 # ANA İÇERİK
@@ -480,6 +564,151 @@ fig_sector.update_layout(
 st.plotly_chart(fig_sector, use_container_width=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
+
+
+# ──────────────────────────────────────────────────────────────
+# 🚨 KRİTİK UYARILAR — En Yüksek Riskli 5 Borçlu
+# ──────────────────────────────────────────────────────────────
+st.markdown(
+    '<div class="section-title">🚨 Kritik Uyarılar — En Yüksek Riskli 5 Borçlu</div>',
+    unsafe_allow_html=True,
+)
+
+top5 = df.nlargest(5, "risk_score")
+cols_top5 = st.columns(5)
+
+for col_t5, (_, row_t5) in zip(cols_top5, top5.iterrows()):
+    risk_t5 = row_t5["risk_score"]
+    if risk_t5 >= 80:
+        border_c = "#fc8181"
+        bg_c = "rgba(197,48,48,0.12)"
+    elif risk_t5 >= 60:
+        border_c = "#f6ad55"
+        bg_c = "rgba(192,86,33,0.12)"
+    else:
+        border_c = "#f6e05e"
+        bg_c = "rgba(183,121,31,0.12)"
+
+    name_t5 = row_t5["debtor_name"]
+    name_short = name_t5[:16] + "…" if len(name_t5) > 16 else name_t5
+
+    with col_t5:
+        st.markdown(
+            f"""
+        <div style='background: {bg_c}; border: 1px solid {border_c};
+             border-top: 3px solid {border_c};
+             border-radius: 10px; padding: 12px; text-align: center;'>
+            <div style='font-size: 0.7rem; color: #718096;
+                 text-transform: uppercase; letter-spacing: 0.5px;
+                 margin-bottom: 4px; white-space: nowrap;
+                 overflow: hidden; text-overflow: ellipsis;'
+                 title='{name_t5}'>
+                {name_short}
+            </div>
+            <div style='font-size: 1.6rem; font-weight: 900; color: {border_c};'>
+                {risk_t5:.0f}
+            </div>
+            <div style='font-size: 0.62rem; color: #4a6fa5;'>/ 100</div>
+            <div style='font-size: 0.67rem; color: #a0aec0; margin-top: 4px;'>
+                {row_t5['days_overdue']}g · ${row_t5['outstanding_amount']/1000:.0f}K
+            </div>
+            <div style='font-size: 0.62rem; color: #718096; margin-top: 2px;'>
+                {row_t5['sector']}
+            </div>
+        </div>
+        """,
+            unsafe_allow_html=True,
+        )
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+
+# ──────────────────────────────────────────────────────────────
+# RİSK SKORU DAĞILIM HİSTOGRAMI
+# ──────────────────────────────────────────────────────────────
+st.markdown(
+    '<div class="section-title">📊 Risk Skoru Dağılımı</div>',
+    unsafe_allow_html=True,
+)
+
+fig_hist = go.Figure()
+fig_hist.add_trace(go.Histogram(
+    x=df["risk_score"],
+    nbinsx=20,
+    marker=dict(
+        color=df["risk_score"],
+        colorscale=[
+            [0.0, "#276749"],
+            [0.4, "#b7791f"],
+            [0.6, "#c05621"],
+            [1.0, "#c53030"],
+        ],
+        line=dict(color="rgba(255,255,255,0.05)", width=1),
+    ),
+    hovertemplate="Skor: %{x}<br>Borçlu Sayısı: %{y}<extra></extra>",
+))
+fig_hist.update_layout(
+    margin=dict(t=10, b=30, l=0, r=0),
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    font=dict(color="#a0aec0"),
+    xaxis=dict(
+        title="Risk Skoru",
+        showgrid=True,
+        gridcolor="rgba(255,255,255,0.05)",
+        color="#718096",
+        range=[0, 100],
+    ),
+    yaxis=dict(
+        title="Borçlu Sayısı",
+        showgrid=True,
+        gridcolor="rgba(255,255,255,0.05)",
+        color="#718096",
+    ),
+    bargap=0.05,
+    height=220,
+    showlegend=False,
+)
+
+col_hist1, col_hist2 = st.columns([2, 1])
+with col_hist1:
+    st.plotly_chart(fig_hist, use_container_width=True)
+with col_hist2:
+    st.markdown(
+        f"""
+    <div style='padding: 16px; background: rgba(15,25,50,0.8);
+         border: 1px solid rgba(99,179,237,0.15); border-radius: 10px;
+         margin-top: 8px;'>
+        <div style='color: #4a6fa5; font-size: 0.7rem; font-weight: 700;
+             text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;'>
+            İstatistikler
+        </div>
+        <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 10px;'>
+            <div>
+                <div style='color: #718096; font-size: 0.68rem;'>Ortalama</div>
+                <div style='color: #e2e8f0; font-weight: 700;'>{df['risk_score'].mean():.1f}</div>
+            </div>
+            <div>
+                <div style='color: #718096; font-size: 0.68rem;'>Medyan</div>
+                <div style='color: #e2e8f0; font-weight: 700;'>{df['risk_score'].median():.1f}</div>
+            </div>
+            <div>
+                <div style='color: #718096; font-size: 0.68rem;'>Maks.</div>
+                <div style='color: #fc8181; font-weight: 700;'>{df['risk_score'].max():.1f}</div>
+            </div>
+            <div>
+                <div style='color: #718096; font-size: 0.68rem;'>Min.</div>
+                <div style='color: #68d391; font-weight: 700;'>{df['risk_score'].min():.1f}</div>
+            </div>
+        </div>
+    </div>
+    """,
+        unsafe_allow_html=True,
+    )
+
+st.markdown("<hr>", unsafe_allow_html=True)
+
+
 
 
 # ──────────────────────────────────────────────────────────────
@@ -723,15 +952,23 @@ if debtor_options:
         "**🤖 AI Karar Açıklaması** *(Groq · Llama 3.3 70B · Karar vermez, açıklar)*"
     )
 
-    col_llm1, col_llm2 = st.columns([1, 4])
+    col_llm1, col_llm2, col_llm3 = st.columns([1.2, 1, 3])
     with col_llm1:
-        generate_btn = st.button("✨ Açıklama Üret", key="gen_explanation")
+        generate_btn = st.button("✨ Açıklama Üret (Gerçek API)", key="gen_explanation")
+    with col_llm2:
+        demo_btn = st.button("🎭 Demo Açıklama", key="gen_demo",
+                             help="API key gerektirmez — örnek açıklama gösterir")
 
     if generate_btn:
         with st.spinner(
             f"Llama 3.3 70B ile {debtor_row['debtor_name']} için açıklama üretiliyor..."
         ):
-            explanation = get_single_explanation(debtor_row, lang_code)
+            try:
+                explanation = get_single_explanation(debtor_row, lang_code)
+                api_source = f"⚡ Groq · Llama 3.3 70B · {lang}"
+            except Exception:
+                explanation = get_mock_explanation(debtor_row, lang_code)
+                api_source = "🎭 Demo Modu (API erişilemiyor — örnek açıklama)"
 
         st.markdown(
             f"""
@@ -740,12 +977,30 @@ if debtor_options:
             {explanation}
             <br><br>
             <span style='color: #4a6fa5; font-size: 0.72rem;'>
-                ⚡ Groq · Llama 3.3 70B · {lang} · Bu açıklama karar değildir — nihai onay insan yöneticiye aittir.
+                {api_source} · Bu açıklama karar değildir — nihai onay insan yöneticiye aittir.
             </span>
         </div>
         """,
             unsafe_allow_html=True,
         )
+
+    if demo_btn:
+        explanation = get_mock_explanation(debtor_row, lang_code)
+        st.markdown(
+            f"""
+        <div class="explanation-box">
+            🤖 <strong>{debtor_row['debtor_name']}</strong><br><br>
+            {explanation}
+            <br><br>
+            <span style='color: #4a6fa5; font-size: 0.72rem;'>
+                🎭 Demo Modu · Gerçek Groq API çağrısı yapılmamıştır.
+                Bu açıklama karar değildir — nihai onay insan yöneticiye aittir.
+            </span>
+        </div>
+        """,
+            unsafe_allow_html=True,
+        )
+
 
 else:
     st.info("Filtrelerle eşleşen borçlu bulunamadı. Filtreleri genişletin.")

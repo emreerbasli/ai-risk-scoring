@@ -17,6 +17,10 @@ check_models.py
 read_docx.py
 docx_content.txt
 
+# Case study dokümanları (şirket gizliliği)
+*.docx
+*.doc
+
 # OS
 .DS_Store
 Thumbs.db
